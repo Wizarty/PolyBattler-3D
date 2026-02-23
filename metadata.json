@@ -1,0 +1,5 @@
+{
+  "name": "PolyBattler 3D",
+  "description": "A web-based 3D action game with combat, levels, and progress tracking.",
+  "requestFramePermissions": []
+}
