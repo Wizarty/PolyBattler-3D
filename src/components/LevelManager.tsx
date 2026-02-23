@@ -261,21 +261,21 @@ function Fireball({ startPos, direction, damage, onHitObstacle }: { startPos: Ve
 
 function LightningStrike({ position }: { position: Vector3 }) {
     const group = useRef<Group>(null);
-    const [opacity, setOpacity] = useState(0);
+    const progress = useRef(0);
     
     // Create a simple jagged path
     const points = useRef(() => {
         const pts = [];
-        const segments = 6;
-        const height = 10;
+        const segments = 8;
+        const height = 15;
         const segmentHeight = height / segments;
         
         pts.push(new Vector3(0, height, 0));
         for(let i=1; i<segments; i++) {
             pts.push(new Vector3(
-                (Math.random() - 0.5) * 1.5, 
+                (Math.random() - 0.5) * 2, 
                 height - (i * segmentHeight), 
-                (Math.random() - 0.5) * 1.5
+                (Math.random() - 0.5) * 2
             ));
         }
         pts.push(new Vector3(0, 0, 0));
@@ -285,28 +285,24 @@ function LightningStrike({ position }: { position: Vector3 }) {
     useFrame((state, delta) => {
         if (!group.current) return;
         
-        // Animation: Flash in quickly, fade out slowly
-        // Life is controlled by parent (500ms), so we just animate visual here
-        // We can use a local timer if we want precise control, but parent unmounts it.
-        // Let's just oscillate or fade.
+        // Animation: Strike down quickly, then fade
+        progress.current += delta * 3.0; // Speed of animation
         
-        // Actually, let's make it appear "gradually" as requested (strike down)
-        // But "quickly but gradually" implies a fast strike.
+        const strikePhase = Math.min(progress.current * 2, 1); // 0 to 1 quickly
+        const fadePhase = Math.max(0, 1 - (progress.current - 0.5) * 2); // Fade after 0.5s
         
-        // Simple flash animation
-        if (opacity < 1) {
-            setOpacity(prev => Math.min(prev + delta * 10, 1)); // Fade in fast
-        } else {
-            // Keep it bright? Or flicker?
-            // Parent removes it, so maybe just keep it full or flicker
-            if (Math.random() > 0.5) setOpacity(0.8 + Math.random() * 0.2);
-        }
-        
-        // Update material opacity
-        group.current.children.forEach((child: any) => {
+        const opacity = strikePhase * fadePhase;
+
+        // Update visibility of segments based on strike progress
+        group.current.children.forEach((child: any, index) => {
             if (child.material) {
-                child.material.opacity = opacity;
-                child.material.emissiveIntensity = opacity * 5;
+                // Show segments sequentially
+                const segmentThreshold = index / group.current!.children.length;
+                const isVisible = strikePhase > segmentThreshold;
+                
+                child.visible = isVisible;
+                child.material.opacity = isVisible ? opacity : 0;
+                child.material.emissiveIntensity = isVisible ? opacity * 3 : 0;
             }
         });
     });
@@ -316,41 +312,19 @@ function LightningStrike({ position }: { position: Vector3 }) {
             {points.map((p, i) => {
                 if (i === points.length - 1) return null;
                 const next = points[i+1];
-                const dist = p.distanceTo(next);
-                const mid = p.clone().add(next).multiplyScalar(0.5);
-                
-                return (
-                    <mesh key={i} position={mid} lookAt={() => next}>
-                         {/* Use lookAt logic manually or via rotation */}
-                         <cylinderGeometry args={[0.15, 0.05, dist]} />
-                         <meshStandardMaterial 
-                            color="#fef08a" 
-                            emissive="#fef08a" 
-                            emissiveIntensity={2} 
-                            transparent 
-                            opacity={0}
-                         />
-                    </mesh>
-                )
-            }).map((mesh, i) => {
-                // Fix rotation for cylinder (defaults to Y axis)
-                // We need to orient cylinder from p to next.
-                // The previous map returned a mesh, but we need to set rotation properly.
-                // Easier to just use LookAt in a wrapper or do math.
-                // Let's do the math properly inside the render.
-                const p = points[i];
-                const next = points[i+1];
                 const direction = new Vector3().subVectors(next, p);
+                const len = direction.length();
                 const arrow = new Vector3(0, 1, 0);
-                const quaternion = new THREE.Quaternion().setFromUnitVectors(arrow, direction.normalize());
+                const quaternion = new Quaternion().setFromUnitVectors(arrow, direction.clone().normalize());
+                const mid = p.clone().add(direction.multiplyScalar(0.5));
                 
                 return (
-                    <mesh key={i} position={p.clone().add(direction.clone().multiplyScalar(0.5))} quaternion={quaternion}>
-                        <cylinderGeometry args={[0.1, 0.15, direction.length(), 4]} />
+                    <mesh key={i} position={mid} quaternion={quaternion}>
+                        <cylinderGeometry args={[0.15, 0.05, len, 6]} />
                         <meshStandardMaterial 
                             color="#fef08a" 
                             emissive="#fef08a" 
-                            emissiveIntensity={5} 
+                            emissiveIntensity={3} 
                             transparent
                             opacity={0}
                         />
@@ -375,9 +349,12 @@ function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos
       setExploding(true);
       
       // AOE Damage
+      // We use a larger radius for the explosion effect
+      const explosionRadius = 3.5;
+      
       scene.traverse((obj) => {
           if (obj.userData.type === 'enemy') {
-              if (obj.position.distanceTo(mesh.current!.position) < 3.0) { // Increased AOE radius slightly
+              if (obj.position.distanceTo(mesh.current!.position) < explosionRadius) {
                   if (obj.userData.hit) obj.userData.hit(damage);
               }
           }
@@ -397,7 +374,7 @@ function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos
     }
 
     // Move
-    const speed = 0.25; // Slightly faster
+    const speed = 0.3; 
     mesh.current.position.add(direction.clone().multiplyScalar(speed));
     distanceTraveled.current += speed;
 
@@ -408,11 +385,13 @@ function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos
     }
 
     // Enemy Direct Hit Check
+    // We check for ANY enemy in close range to trigger explosion
     let hitEnemy = false;
     scene.traverse((obj) => {
         if (hitEnemy) return;
         if (obj.userData.type === 'enemy') {
-            if (obj.position.distanceTo(mesh.current!.position) < 1.0) {
+            // Check distance (considering enemy radius approx 0.5 + missile radius 0.3)
+            if (obj.position.distanceTo(mesh.current!.position) < 1.5) {
                 hitEnemy = true;
             }
         }
@@ -424,7 +403,7 @@ function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos
     }
 
     // Explode after max distance
-    if (distanceTraveled.current > 12) { // Increased range
+    if (distanceTraveled.current > 15) {
         explode();
     }
   });
