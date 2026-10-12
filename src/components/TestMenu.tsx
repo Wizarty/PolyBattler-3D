@@ -9,10 +9,39 @@ export function TestMenu() {
 
   return (
     <div className="absolute top-24 right-4 w-80 bg-slate-900/90 border border-slate-700 rounded-xl p-4 max-h-[80vh] overflow-y-auto pointer-events-auto z-[100] shadow-2xl">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-3">
         <h3 className="text-yellow-400 font-black text-xl uppercase">Test Mode</h3>
         <button onClick={() => setTestMode(false)} className="text-white/50 hover:text-white">
           <X size={20} />
+        </button>
+      </div>
+
+      {/* Quick Test Actions */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <button
+          onClick={() => useGameStore.getState().openChestMiniGame('legendary')}
+          className="bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-400 text-yellow-300 font-bold text-xs p-2 rounded-lg text-center transition-all"
+        >
+          🎁 Колесо Удачи
+        </button>
+        <button
+          onClick={() => {
+            useGameStore.getState().startTrial({
+              active: true,
+              id: 'test-trial',
+              title: 'Блиц-Испытание',
+              description: 'Победите 10 врагов!',
+              timeLeft: 25,
+              maxTime: 25,
+              targetCount: 10,
+              currentCount: 0,
+              type: 'kill',
+              rewardGranted: false
+            });
+          }}
+          className="bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400 text-purple-300 font-bold text-xs p-2 rounded-lg text-center transition-all"
+        >
+          ⚡ Испытание
         </button>
       </div>
       

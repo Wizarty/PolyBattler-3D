@@ -4,6 +4,7 @@ import { Heart, Trophy, Zap, Skull, Clock, Pause, Play, LogOut, Flame, Sparkles,
 import { motion, AnimatePresence } from 'motion/react';
 import { UpgradeMenu } from './UpgradeMenu';
 import { TestMenu } from './TestMenu';
+import { ChestMiniGameModal, TrialBanner } from './MiniGames';
 
 export function HUD() {
   const { 
@@ -121,6 +122,9 @@ export function HUD() {
                     {comboId === 'sanctuary' && <Heart size={13} className="text-emerald-400" />}
                     {comboId === 'thorn_guard' && <Shield size={13} className="text-green-400" />}
                     {comboId === 'molten_spores' && <Flame size={13} className="text-red-400" />}
+                    {comboId === 'absolute_zero' && <Sparkles size={13} className="text-sky-300" />}
+                    {comboId === 'event_horizon' && <Flame size={13} className="text-purple-400" />}
+                    {comboId === 'storm_cleave' && <Zap size={13} className="text-amber-400" />}
                     <span className="text-[11px] font-bold text-yellow-300 font-sans tracking-wide">
                       {combo.name}
                     </span>
@@ -154,8 +158,10 @@ export function HUD() {
         </div>
       </div>
 
-      {/* Menus */}
+      {/* Menus & Mini-Games */}
       <AnimatePresence>
+        <TrialBanner />
+        <ChestMiniGameModal />
         {isTestMode && status === 'playing' && <TestMenu />}
         {status === 'levelup' && <UpgradeMenu />}
 

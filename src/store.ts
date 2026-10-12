@@ -22,6 +22,34 @@ export interface Combo {
   active: boolean;
 }
 
+export interface DamageNumber {
+  id: number;
+  value: number;
+  position: { x: number, y: number, z: number };
+  color: string;
+  isCrit?: boolean;
+}
+
+export interface TrialState {
+  active: boolean;
+  id: string;
+  title: string;
+  description: string;
+  timeLeft: number;
+  maxTime: number;
+  targetCount: number;
+  currentCount: number;
+  type: 'survive' | 'kill' | 'stay_in_circle';
+  circlePos?: { x: number, z: number };
+  circleRadius?: number;
+  rewardGranted: boolean;
+}
+
+export interface ChestMiniGame {
+  active: boolean;
+  rarity: 'rare' | 'epic' | 'legendary';
+}
+
 interface PlayerStats {
   moveSpeed: number;
   maxHealth: number;
@@ -51,7 +79,7 @@ export interface Obstacle {
 }
 
 interface GameState {
-  status: 'menu' | 'playing' | 'gameover' | 'paused' | 'levelup' | 'skills';
+  status: 'menu' | 'playing' | 'gameover' | 'paused' | 'levelup' | 'skills' | 'chest_minigame';
   time: number;
   level: number;
   score: number;
@@ -67,6 +95,10 @@ interface GameState {
   isTestMode: boolean;
   
   obstacles: Obstacle[];
+  damageNumbers: DamageNumber[];
+  trial: TrialState | null;
+  chestMiniGame: ChestMiniGame | null;
+  isRiverElectrified: boolean;
   
   // Meta Progression (Skill Tree)
   skillPoints: number;
@@ -90,6 +122,16 @@ interface GameState {
   
   setObstacles: (obstacles: Obstacle[]) => void;
   damageObstacle: (id: string, amount: number) => void;
+  addDamageNumber: (val: number, pos: { x: number, y: number, z: number }, color?: string, isCrit?: boolean) => void;
+  removeDamageNumber: (id: number) => void;
+  
+  startTrial: (trial: TrialState) => void;
+  progressTrial: (countDelta?: number) => void;
+  completeTrial: (success: boolean) => void;
+  
+  openChestMiniGame: (rarity?: 'rare' | 'epic' | 'legendary') => void;
+  finishChestMiniGame: (rewardMultiplier: number) => void;
+  setRiverElectrified: (electrified: boolean) => void;
 }
 
 const INITIAL_STATS: PlayerStats = {
@@ -147,6 +189,33 @@ export const UPGRADES: Record<string, Upgrade> = {
     description: 'Radiates a damaging protective circle around you.',
     type: 'weapon',
     element: 'nature',
+    maxLevel: 8,
+    apply: () => ({}),
+  },
+  'frost_nova': {
+    id: 'frost_nova',
+    name: 'Frost Nova',
+    description: 'Periodically releases a glacial shockwave, freezing and slowing foes.',
+    type: 'weapon',
+    element: 'nature',
+    maxLevel: 8,
+    apply: () => ({}),
+  },
+  'void_singularity': {
+    id: 'void_singularity',
+    name: 'Void Rift',
+    description: 'Opens a gravitational singularity that pulls and crushes enemies.',
+    type: 'weapon',
+    element: 'arcane',
+    maxLevel: 8,
+    apply: () => ({}),
+  },
+  'boomerang': {
+    id: 'boomerang',
+    name: 'Whirlwind Scythe',
+    description: 'Hurls a curved razor scythe that slices through groups and returns.',
+    type: 'weapon',
+    element: 'physical',
     maxLevel: 8,
     apply: () => ({}),
   },
@@ -266,6 +335,27 @@ export const COMBOS: Record<string, Combo> = {
     requiredElements: ['fire', 'nature'],
     active: false,
   },
+  'absolute_zero': {
+    id: 'absolute_zero',
+    name: 'Absolute Zero',
+    description: 'Frost Novas shatter chilled enemies into piercing ice spikes.',
+    requiredElements: ['nature', 'arcane'],
+    active: false,
+  },
+  'event_horizon': {
+    id: 'event_horizon',
+    name: 'Event Horizon',
+    description: 'Void Rifts pull enemies into a blazing celestial vortex with explosive collapse.',
+    requiredElements: ['arcane', 'fire'],
+    active: false,
+  },
+  'storm_cleave': {
+    id: 'storm_cleave',
+    name: 'Thunderous Cleave',
+    description: 'Whirlwind Scythes are charged with lightning, electrocuting entire swarms.',
+    requiredElements: ['physical', 'lightning'],
+    active: false,
+  },
 };
 
 export const useGameStore = create<GameState>()(
@@ -286,6 +376,10 @@ export const useGameStore = create<GameState>()(
       skillPoints: 0,
       unlockedSkills: [],
       obstacles: [],
+      damageNumbers: [],
+      trial: null,
+      chestMiniGame: null,
+      isRiverElectrified: false,
 
       startGame: () => set({ 
         status: 'playing', 
@@ -299,7 +393,10 @@ export const useGameStore = create<GameState>()(
         inventory: [{ id: 'sword', level: 1 }],
         activeCombos: [],
         invulnerableUntil: 0,
-        // Obstacles are set by LevelManager on mount
+        damageNumbers: [],
+        trial: null,
+        chestMiniGame: null,
+        isRiverElectrified: false,
       }),
       
       pauseGame: () => set((state) => ({ status: state.status === 'playing' ? 'paused' : state.status })),
@@ -396,9 +493,25 @@ export const useGameStore = create<GameState>()(
         if (state.activeCombos.includes('sanctuary') && currentHealth < state.stats.maxHealth) {
           currentHealth = Math.min(state.stats.maxHealth, currentHealth + 2.5 * delta);
         }
+
+        // Trial timer
+        let updatedTrial = state.trial;
+        if (updatedTrial && updatedTrial.active) {
+          const newTimeLeft = Math.max(0, updatedTrial.timeLeft - delta);
+          if (newTimeLeft <= 0) {
+            // Check success if survive trial
+            const success = updatedTrial.type === 'survive' || updatedTrial.currentCount >= updatedTrial.targetCount;
+            state.completeTrial(success);
+            updatedTrial = null;
+          } else {
+            updatedTrial = { ...updatedTrial, timeLeft: newTimeLeft };
+          }
+        }
+
         return { 
           time: state.time + delta,
-          health: currentHealth
+          health: currentHealth,
+          trial: updatedTrial
         };
       }),
 
@@ -431,6 +544,70 @@ export const useGameStore = create<GameState>()(
           
           return { obstacles: newObstacles };
       }),
+
+      addDamageNumber: (val, pos, color = '#ffffff', isCrit = false) => set((state) => {
+        const newNum: DamageNumber = {
+          id: Date.now() + Math.random(),
+          value: Math.round(val),
+          position: pos,
+          color,
+          isCrit
+        };
+        // Keep max 25 numbers on screen
+        const updated = [...state.damageNumbers.slice(-24), newNum];
+        return { damageNumbers: updated };
+      }),
+
+      removeDamageNumber: (id) => set((state) => ({
+        damageNumbers: state.damageNumbers.filter(d => d.id !== id)
+      })),
+
+      startTrial: (trial) => set({ trial }),
+
+      progressTrial: (countDelta = 1) => set((state) => {
+        if (!state.trial || !state.trial.active) return {};
+        const newCount = state.trial.currentCount + countDelta;
+        if (newCount >= state.trial.targetCount && state.trial.type === 'kill') {
+          state.completeTrial(true);
+          return { trial: null };
+        }
+        return { trial: { ...state.trial, currentCount: newCount } };
+      }),
+
+      completeTrial: (success) => {
+        const state = get();
+        if (success) {
+          // Reward: Heal, +300 Score, +50 XP, and open lucky chest minigame!
+          state.heal(50);
+          state.addScore(500);
+          state.addXp(60);
+          state.openChestMiniGame('epic');
+        }
+        set({ trial: null });
+      },
+
+      openChestMiniGame: (rarity = 'rare') => set({
+        chestMiniGame: { active: true, rarity },
+        status: 'chest_minigame'
+      }),
+
+      finishChestMiniGame: (rewardMultiplier) => {
+        const state = get();
+        // Give rewards according to wheel multiplier (1x, 2x, 3x)
+        state.addScore(250 * rewardMultiplier);
+        state.addXp(40 * rewardMultiplier);
+        state.heal(25 * rewardMultiplier);
+        // Level up if jackpot multiplier >= 3
+        if (rewardMultiplier >= 3) {
+          state.addXp(state.maxXp);
+        }
+        set({
+          chestMiniGame: null,
+          status: 'playing'
+        });
+      },
+
+      setRiverElectrified: (electrified) => set({ isRiverElectrified: electrified }),
     }),
     {
       name: 'polybattler-storage',

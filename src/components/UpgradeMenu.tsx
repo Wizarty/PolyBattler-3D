@@ -26,6 +26,9 @@ export function UpgradeMenu() {
       case 'fireball': return <Flame size={32} className="text-orange-500" />;
       case 'lightning': return <Zap size={32} className="text-yellow-400" />;
       case 'garlic': return <Shield size={32} className="text-emerald-400" />;
+      case 'frost_nova': return <div className="text-cyan-300 font-bold text-3xl">❄️</div>;
+      case 'void_singularity': return <div className="text-purple-400 font-bold text-3xl">🌌</div>;
+      case 'boomerang': return <div className="text-amber-400 font-bold text-3xl">🪃</div>;
       case 'spinach': return <div className="text-emerald-400 font-bold text-3xl">🍃</div>;
       case 'tome': return <BookOpen size={32} className="text-purple-400" />;
       case 'boots': return <Footprints size={32} className="text-blue-400" />;
