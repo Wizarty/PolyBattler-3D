@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Trophy, Gift, Zap } from 'lucide-react';
+import { Sparkles, Trophy, Gift, Zap, X } from 'lucide-react';
 
 export function ChestMiniGameModal() {
   const { chestMiniGame, finishChestMiniGame } = useGameStore();
@@ -9,13 +9,26 @@ export function ChestMiniGameModal() {
   const [stopped, setStopped] = useState(false);
   const [wonTier, setWonTier] = useState<number | null>(null);
   
-  const direction = useRef(1);
+  const needlePosRef = useRef(50);
+  const isStoppingRef = useRef(false);
   const animFrame = useRef<number | null>(null);
 
+  // Reset state every time a new minigame is opened
+  useEffect(() => {
+    if (chestMiniGame) {
+      setStopped(false);
+      setWonTier(null);
+      setNeedlePos(40);
+      needlePosRef.current = 40;
+      isStoppingRef.current = false;
+    }
+  }, [chestMiniGame]);
+
+  // Needle animation loop
   useEffect(() => {
     if (!chestMiniGame || stopped) return;
 
-    let pos = 0;
+    let pos = needlePosRef.current;
     let dir = 1;
     const speed = chestMiniGame.rarity === 'legendary' ? 1.6 : 1.3;
 
@@ -28,46 +41,63 @@ export function ChestMiniGameModal() {
         pos = 0;
         dir = 1;
       }
+      needlePosRef.current = pos;
       setNeedlePos(pos);
       animFrame.current = requestAnimationFrame(loop);
     };
 
     animFrame.current = requestAnimationFrame(loop);
     return () => {
-      if (animFrame.current) cancelAnimationFrame(animFrame.current);
+      if (animFrame.current) {
+        cancelAnimationFrame(animFrame.current);
+        animFrame.current = null;
+      }
     };
   }, [chestMiniGame, stopped]);
 
   const handleStop = () => {
-    if (stopped) return;
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
     setStopped(true);
-    if (animFrame.current) cancelAnimationFrame(animFrame.current);
 
-    // Evaluate zone
+    if (animFrame.current) {
+      cancelAnimationFrame(animFrame.current);
+      animFrame.current = null;
+    }
+
+    // Evaluate zone from current position
+    const currentPos = needlePosRef.current;
     let multiplier = 1;
-    if (needlePos >= 85) {
+    if (currentPos >= 85) {
       multiplier = 3; // Jackpot!
-    } else if (needlePos >= 60) {
+    } else if (currentPos >= 60) {
       multiplier = 2; // Super!
     } else {
       multiplier = 1; // Good
     }
     setWonTier(multiplier);
 
+    // Guaranteed completion callback with safety timer
     setTimeout(() => {
       finishChestMiniGame(multiplier);
-    }, 1800);
+      isStoppingRef.current = false;
+    }, 1500);
   };
 
+  // Stable keyboard listener for Space, Enter, or Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'Enter') {
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        e.preventDefault();
         handleStop();
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        finishChestMiniGame(1);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [needlePos, stopped]);
+  }, []);
 
   if (!chestMiniGame) return null;
 
@@ -79,6 +109,15 @@ export function ChestMiniGameModal() {
       className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[100] pointer-events-auto"
     >
       <div className="max-w-xl w-full p-8 bg-slate-900 border-2 border-yellow-400 rounded-3xl text-center shadow-[0_0_50px_rgba(250,204,21,0.4)] relative overflow-hidden">
+        {/* Emergency close button */}
+        <button
+          onClick={() => finishChestMiniGame(1)}
+          className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-white/60 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors"
+          title="Закрыть"
+        >
+          <X size={18} />
+        </button>
+
         {/* Glow */}
         <div className="absolute -top-20 -left-20 w-48 h-48 bg-yellow-500/20 rounded-full blur-3xl pointer-events-none" />
 
@@ -126,7 +165,7 @@ export function ChestMiniGameModal() {
               {wonTier === 3 ? (
                 <>
                   <Sparkles size={28} className="text-yellow-400 animate-spin" />
-                  ДЖЕКПОТ! +УРОВЕНЬ И МЕГА БОНУС!
+                  ДЖЕКПОТ! +БОНУСНЫЙ ОПЫТ!
                 </>
               ) : wonTier === 2 ? (
                 <>
@@ -141,8 +180,11 @@ export function ChestMiniGameModal() {
               )}
             </motion.div>
           ) : (
-            <div className="text-xs text-white/50 font-mono">
-              [ПРОБЕЛ] или кнопка снизу для остановки
+            <div className="text-xs text-white/60 font-mono flex items-center gap-2">
+              <span className="bg-yellow-400/20 text-yellow-300 px-2 py-0.5 rounded border border-yellow-400/40 font-bold">[ПРОБЕЛ]</span>
+              <span>или</span>
+              <span className="bg-yellow-400/20 text-yellow-300 px-2 py-0.5 rounded border border-yellow-400/40 font-bold">[ENTER]</span>
+              <span>для остановки</span>
             </div>
           )}
         </div>
@@ -156,7 +198,7 @@ export function ChestMiniGameModal() {
               : 'bg-yellow-400 hover:bg-yellow-300 text-black hover:scale-105 active:scale-95 shadow-[0_4px_20px_rgba(250,204,21,0.4)]'
           }`}
         >
-          {stopped ? 'СУНДУК ОТКРЫВАЕТСЯ...' : 'СТОП! [ПРОБЕЛ]'}
+          {stopped ? 'СУНДУК ОТКРЫВАЕТСЯ...' : 'СТОП! [ПРОБЕЛ / ENTER]'}
         </button>
       </div>
     </motion.div>

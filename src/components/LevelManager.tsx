@@ -1189,8 +1189,9 @@ export function LevelManager() {
     setBosses((prev) => prev.filter((b) => b.id !== id));
     setBossActive(false);
 
-    // Shockwave clear: vaporize lower minions with XP bonus!
-    enemies.forEach(() => addXp(12));
+    // Shockwave clear: vaporize lower minions with balanced XP bonus!
+    const clearMinionXp = Math.min(60, enemies.length * 2);
+    if (clearMinionXp > 0) addXp(clearMinionXp);
     setEnemies([]);
 
     // Epic Boss Drops
@@ -1200,7 +1201,7 @@ export function LevelManager() {
         id: `pickup-boss-xp-${Date.now()}`,
         position: [pos.x, 1, pos.z],
         type: 'xp',
-        value: value * 1.5,
+        value: 120,
       },
       {
         id: `pickup-boss-chest-${Date.now()}`,
@@ -1256,7 +1257,8 @@ export function LevelManager() {
       if (totalXp > 0) addXp(totalXp);
       setPickups((prev) => prev.filter((p) => p.type !== 'xp'));
     } else if (type === 'bomb') {
-      enemies.forEach(() => addXp(12));
+      const bombXp = Math.min(50, enemies.length * 2);
+      if (bombXp > 0) addXp(bombXp);
       setEnemies([]);
     }
   };

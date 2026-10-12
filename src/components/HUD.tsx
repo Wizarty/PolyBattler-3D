@@ -31,7 +31,8 @@ export function HUD() {
     currentBossInfo,
     activeBuffs,
     realmBanner,
-    groundHazardEffect
+    groundHazardEffect,
+    chestMiniGame
   } = useGameStore();
 
   const [damageFlash, setDamageFlash] = useState(false);
@@ -299,7 +300,7 @@ export function HUD() {
       {/* Menus & Mini-Games */}
       <AnimatePresence>
         <TrialBanner />
-        <ChestMiniGameModal />
+        {chestMiniGame && <ChestMiniGameModal key="chest-minigame-modal" />}
         {isTestMode && status === 'playing' && <TestMenu />}
         {status === 'levelup' && <UpgradeMenu />}
 

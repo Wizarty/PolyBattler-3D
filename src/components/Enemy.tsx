@@ -27,17 +27,17 @@ interface EnemyProps {
 }
 
 const ENEMY_BASE_STATS = {
-  basic: { speed: 0.085, hp: 55, color: '#ef4444', scale: 1.0, xp: 12, damage: 12, range: 0, radius: 0.6 },
-  fast: { speed: 0.13, hp: 35, color: '#fbbf24', scale: 0.8, xp: 16, damage: 10, range: 0, radius: 0.5 },
-  tank: { speed: 0.05, hp: 260, color: '#7f1d1d', scale: 2.0, xp: 75, damage: 24, range: 0, radius: 1.2 },
-  ranged: { speed: 0.07, hp: 45, color: '#10b981', scale: 1.0, xp: 22, damage: 12, range: 14, radius: 0.6 },
-  wanderer: { speed: 0.09, hp: 55, color: '#8b5cf6', scale: 0.9, xp: 22, damage: 14, range: 0, radius: 0.6 },
-  splitter: { speed: 0.075, hp: 80, color: '#22c55e', scale: 1.2, xp: 28, damage: 14, range: 0, radius: 0.7 },
-  mini_slime: { speed: 0.14, hp: 22, color: '#86efac', scale: 0.6, xp: 8, damage: 8, range: 0, radius: 0.4 },
-  shielded: { speed: 0.065, hp: 140, color: '#38bdf8', scale: 1.1, xp: 35, damage: 18, range: 0, radius: 0.7 },
-  burrower: { speed: 0.11, hp: 65, color: '#d97706', scale: 0.9, xp: 30, damage: 16, range: 0, radius: 0.6 },
-  shaman: { speed: 0.075, hp: 70, color: '#ec4899', scale: 1.0, xp: 40, damage: 10, range: 10, radius: 0.6 },
-  goblin: { speed: 0.16, hp: 90, color: '#facc15', scale: 0.85, xp: 50, damage: 0, range: 0, radius: 0.5 },
+  basic: { speed: 0.085, hp: 55, color: '#ef4444', scale: 1.0, xp: 5, damage: 12, range: 0, radius: 0.6 },
+  fast: { speed: 0.13, hp: 35, color: '#fbbf24', scale: 0.8, xp: 6, damage: 10, range: 0, radius: 0.5 },
+  tank: { speed: 0.05, hp: 260, color: '#7f1d1d', scale: 2.0, xp: 26, damage: 24, range: 0, radius: 1.2 },
+  ranged: { speed: 0.07, hp: 45, color: '#10b981', scale: 1.0, xp: 8, damage: 12, range: 14, radius: 0.6 },
+  wanderer: { speed: 0.09, hp: 55, color: '#8b5cf6', scale: 0.9, xp: 7, damage: 14, range: 0, radius: 0.6 },
+  splitter: { speed: 0.075, hp: 80, color: '#22c55e', scale: 1.2, xp: 10, damage: 14, range: 0, radius: 0.7 },
+  mini_slime: { speed: 0.14, hp: 22, color: '#86efac', scale: 0.6, xp: 3, damage: 8, range: 0, radius: 0.4 },
+  shielded: { speed: 0.065, hp: 140, color: '#38bdf8', scale: 1.1, xp: 12, damage: 18, range: 0, radius: 0.7 },
+  burrower: { speed: 0.11, hp: 65, color: '#d97706', scale: 0.9, xp: 10, damage: 16, range: 0, radius: 0.6 },
+  shaman: { speed: 0.075, hp: 70, color: '#ec4899', scale: 1.0, xp: 14, damage: 10, range: 10, radius: 0.6 },
+  goblin: { speed: 0.16, hp: 90, color: '#facc15', scale: 0.85, xp: 20, damage: 0, range: 0, radius: 0.5 },
 };
 
 export function Enemy({ id, position, type, onDeath, onFire, onSplit }: EnemyProps) {

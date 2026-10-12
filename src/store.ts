@@ -425,7 +425,7 @@ export const useGameStore = create<GameState>()(
       highScore: 0,
       health: 120,
       xp: 0,
-      maxXp: 35,
+      maxXp: 90,
       invulnerableUntil: 0,
       stats: INITIAL_STATS,
       inventory: [],
@@ -455,7 +455,7 @@ export const useGameStore = create<GameState>()(
         score: 0, 
         level: 1, 
         xp: 0, 
-        maxXp: 35,
+        maxXp: 90,
         time: 0,
         stats: INITIAL_STATS,
         inventory: [{ id: 'sword', level: 1 }],
@@ -525,12 +525,18 @@ export const useGameStore = create<GameState>()(
       })),
       
       addXp: (amount) => {
-        const { xp, maxXp } = get();
+        const { xp, maxXp, level, status } = get();
+        if (status === 'gameover') return;
+
         const newXp = xp + amount;
-        if (newXp >= maxXp) {
+        if (newXp >= maxXp && (status === 'playing' || status === 'chest_minigame')) {
+          // Progressive XP curve: Level 1=90, Level 2=154, Level 3=226, Level 4=304...
+          const nextLevel = level + 1;
+          const nextMaxXp = Math.floor(90 + (nextLevel - 1) * 50 + Math.pow(nextLevel, 1.55) * 14);
+
           set({ 
-            xp: newXp - maxXp, 
-            maxXp: Math.floor(maxXp * 1.22),
+            xp: Math.min(newXp - maxXp, Math.floor(maxXp * 0.45)), 
+            maxXp: nextMaxXp,
             status: 'levelup' 
           });
         } else {
@@ -723,10 +729,10 @@ export const useGameStore = create<GameState>()(
       finishChestMiniGame: (rewardMultiplier) => {
         const state = get();
         state.addScore(250 * rewardMultiplier);
-        state.addXp(40 * rewardMultiplier);
+        state.addXp(18 * rewardMultiplier);
         state.heal(25 * rewardMultiplier);
         if (rewardMultiplier >= 3) {
-          state.addXp(state.maxXp);
+          state.addXp(Math.floor(state.maxXp * 0.45));
         }
         set({
           chestMiniGame: null,
@@ -747,7 +753,7 @@ export const useGameStore = create<GameState>()(
 
         heal(80);
         addScore(3000 * realmLevel);
-        addXp(maxXp);
+        addXp(Math.floor(maxXp * 0.4));
 
         set({
           realmLevel: nextRealm,
