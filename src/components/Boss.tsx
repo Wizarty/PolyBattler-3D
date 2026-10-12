@@ -5,7 +5,12 @@ import { useGameStore } from '../store';
 import { Html } from '@react-three/drei';
 import { entityRegistry } from '../utils/entityRegistry';
 
-export type BossType = 'earth_colossus' | 'river_leviathan';
+export type BossType = 
+  | 'earth_colossus' 
+  | 'magma_titan' 
+  | 'void_sovereign' 
+  | 'glacial_dreadnought' 
+  | 'river_leviathan';
 
 interface BossProps {
   id: string;
@@ -14,7 +19,6 @@ interface BossProps {
   onDeath: (pos: Vector3, value: number) => void;
 }
 
-// Boulders hurled by Earth Colossus
 interface BoulderData {
   id: number;
   position: Vector3;
@@ -22,32 +26,64 @@ interface BoulderData {
   scale: number;
   speed: number;
   distTraveled: number;
+  color?: string;
 }
+
+const BOSS_BASE_HP: Record<BossType, number> = {
+  earth_colossus: 2000,
+  magma_titan: 3600,
+  void_sovereign: 5400,
+  glacial_dreadnought: 7200,
+  river_leviathan: 2800,
+};
+
+const BOSS_NAMES: Record<BossType, string> = {
+  earth_colossus: 'Земляной Колосс',
+  magma_titan: 'Магма Титан',
+  void_sovereign: 'Владыка Бездны',
+  glacial_dreadnought: 'Ледяной Дредноут',
+  river_leviathan: 'Речной Левиафан',
+};
 
 export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossProps) {
   const group = useRef<Group>(null);
-  const { status, takeDamage, addScore, addDamageNumber, setRiverElectrified, obstacles, damageObstacle } = useGameStore();
+  const { 
+    status, 
+    takeDamage, 
+    addScore, 
+    addDamageNumber, 
+    setRiverElectrified, 
+    obstacles, 
+    damageObstacle,
+    updateBossInfo,
+    advanceRealm,
+    realmLevel
+  } = useGameStore();
 
-  const maxHealth = type === 'earth_colossus' ? 1800 : 2500;
+  const maxHealth = Math.round(BOSS_BASE_HP[type] * (1 + (realmLevel - 1) * 0.35));
   const [health, setHealth] = useState(maxHealth);
   const [flash, setFlash] = useState(0);
 
-  // Phases
-  // earth_colossus: 'chase' | 'slam' | 'throw_boulder' | 'enraged'
-  // river_leviathan: 'submerged' | 'surface_sweep' | 'electrify_storm' | 'bridge_assault'
   const [currentPhase, setCurrentPhase] = useState<string>('chase');
   const phaseTimer = useRef(0);
   const lastAttackTime = useRef(0);
 
-  // Boulder projectiles
   const [boulders, setBoulders] = useState<BoulderData[]>([]);
-  // Telegraph indicator
   const [telegraphPos, setTelegraphPos] = useState<Vector3 | null>(null);
   const [telegraphRadius, setTelegraphRadius] = useState(0);
 
-  const { scene } = useThree();
+  // Sync Boss status to top HUD
+  useEffect(() => {
+    updateBossInfo({
+      id,
+      name: BOSS_NAMES[type],
+      health,
+      maxHealth,
+      phase: currentPhase
+    });
+  }, [id, type, health, maxHealth, currentPhase, updateBossInfo]);
 
-  // If River Leviathan, electrify the river while alive
+  // Leviathan river electrification
   useEffect(() => {
     if (type === 'river_leviathan') {
       setRiverElectrified(true);
@@ -56,8 +92,9 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
       if (type === 'river_leviathan') {
         setRiverElectrified(false);
       }
+      updateBossInfo(null);
     };
-  }, [type, setRiverElectrified]);
+  }, [type, setRiverElectrified, updateBossInfo]);
 
   // Setup hit handler & register in entityRegistry
   useEffect(() => {
@@ -67,20 +104,25 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
           const newHealth = Math.max(0, h - amount);
           setFlash(5);
 
-          // Pop damage number
           if (group.current) {
-            const headPos = group.current.position.clone().add(new Vector3((Math.random()-0.5)*1.5, 3.5, (Math.random()-0.5)*1.5));
+            const headPos = group.current.position.clone().add(new Vector3((Math.random() - 0.5) * 1.5, 3.5, (Math.random() - 0.5) * 1.5));
             addDamageNumber(amount, headPos, '#fbbf24', amount > 40);
           }
 
           if (newHealth <= 0) {
-            addScore(type === 'earth_colossus' ? 2500 : 4000);
+            addScore(type === 'earth_colossus' ? 2500 : (type === 'magma_titan' ? 4000 : 6000));
             if (type === 'river_leviathan') {
               setRiverElectrified(false);
             }
+            updateBossInfo(null);
+
             if (group.current) {
-              onDeath(group.current.position.clone(), 600); // Massive XP
+              onDeath(group.current.position.clone(), 800);
             }
+            // Advance to next realm biome!
+            setTimeout(() => {
+              advanceRealm();
+            }, 800);
           }
           return newHealth;
         });
@@ -94,7 +136,7 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
       entityRegistry.registerEnemy({
         id,
         position: group.current.position,
-        radius: 2.5,
+        radius: 2.8,
         hit: hitHandler
       });
     }
@@ -102,12 +144,12 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
     return () => {
       entityRegistry.unregisterEnemy(id);
     };
-  }, [id, addScore, addDamageNumber, onDeath, type, setRiverElectrified]);
+  }, [id, addScore, addDamageNumber, onDeath, type, setRiverElectrified, updateBossInfo, advanceRealm]);
 
   useFrame((state, delta) => {
     if (status !== 'playing' || !group.current) return;
 
-    if (flash > 0) setFlash(f => f - 1);
+    if (flash > 0) setFlash((f) => f - 1);
 
     const playerPos = state.scene.userData.playerPosition as Vector3;
     if (!playerPos) return;
@@ -118,171 +160,93 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
 
     phaseTimer.current += delta;
 
-    // --- EARTH COLOSSUS LOGIC ---
-    if (type === 'earth_colossus') {
-      // Rotate phase every 4.5 seconds
-      if (phaseTimer.current > 4.5) {
-        phaseTimer.current = 0;
-        if (healthPercent < 0.4) {
-          // Enraged mode: cycles faster between slam and throw
-          setCurrentPhase(Math.random() > 0.5 ? 'slam' : 'throw_boulder');
-        } else {
-          const phases = ['chase', 'slam', 'throw_boulder'];
-          setCurrentPhase(phases[Math.floor(Math.random() * phases.length)]);
-        }
+    // Phase cycle every 4.0s
+    if (phaseTimer.current > 4.0) {
+      phaseTimer.current = 0;
+      const phases = healthPercent < 0.4 ? ['slam', 'throw_boulder', 'special'] : ['chase', 'slam', 'throw_boulder'];
+      setCurrentPhase(phases[Math.floor(Math.random() * phases.length)]);
+    }
+
+    // Phase Behaviors
+    if (currentPhase === 'chase') {
+      setTelegraphPos(null);
+      const dir = new Vector3().subVectors(playerPos, currentPos).normalize();
+      dir.y = 0;
+      const moveSpeed = (healthPercent < 0.4 ? 0.058 : 0.042);
+      currentPos.add(dir.multiplyScalar(moveSpeed));
+      group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
+    } else if (currentPhase === 'slam') {
+      if (!telegraphPos) {
+        setTelegraphPos(currentPos.clone());
+        setTelegraphRadius(6.0);
       }
 
-      // Movement & Attacks based on phase
-      if (currentPhase === 'chase') {
-        setTelegraphPos(null);
+      const slamProgress = phaseTimer.current / 4.0;
+      if (slamProgress < 0.5) {
+        currentPos.y = 1 + Math.sin(slamProgress * Math.PI) * 3.0;
+      } else {
+        currentPos.y = 1;
+        if (phaseTimer.current > 2.0 && phaseTimer.current < 2.25) {
+          if (distToPlayer < 6.5) {
+            takeDamage(type === 'magma_titan' ? 32 : (type === 'void_sovereign' ? 36 : 28));
+          }
+          setTelegraphPos(null);
+        }
+      }
+    } else if (currentPhase === 'throw_boulder') {
+      setTelegraphPos(null);
+      currentPos.y = 1;
+      group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
+
+      if (phaseTimer.current > 1.2 && phaseTimer.current < 1.4 && boulders.length === 0) {
         const dir = new Vector3().subVectors(playerPos, currentPos).normalize();
         dir.y = 0;
-        const moveSpeed = (healthPercent < 0.4 ? 0.055 : 0.038);
-        currentPos.add(dir.multiplyScalar(moveSpeed));
-        group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
-      } 
-      else if (currentPhase === 'slam') {
-        // Telegraph ground impact
-        if (!telegraphPos) {
-          setTelegraphPos(currentPos.clone());
-          setTelegraphRadius(5.5);
-        }
-
-        // Jump & Slam animation
-        const slamProgress = phaseTimer.current / 4.5;
-        if (slamProgress < 0.5) {
-          // Rise up
-          currentPos.y = 1 + Math.sin(slamProgress * Math.PI) * 2.5;
-        } else {
-          // Slam down
-          currentPos.y = 1;
-          // Check slam hit once
-          if (phaseTimer.current > 2.3 && phaseTimer.current < 2.5) {
-            if (distToPlayer < 6.0) {
-              takeDamage(24);
-            }
-            // Shatter nearby landscape obstacles (rocks and trees) into shrapnel!
-            for (const obs of obstacles) {
-              const obsPos = new Vector3(obs.position.x, 0, obs.position.z);
-              if (obsPos.distanceTo(currentPos) < 7.5) {
-                damageObstacle(obs.id, 999); // Instantly shatter obstacle!
-              }
-            }
+        setBoulders([
+          {
+            id: Date.now(),
+            position: currentPos.clone().add(new Vector3(0, 2.5, 0)),
+            direction: dir,
+            scale: 1.3,
+            speed: 0.32,
+            distTraveled: 0,
+            color: type === 'magma_titan' ? '#ea580c' : (type === 'void_sovereign' ? '#8b5cf6' : (type === 'glacial_dreadnought' ? '#38bdf8' : '#b45309'))
           }
-        }
-      } 
-      else if (currentPhase === 'throw_boulder') {
-        group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
-        // Throw boulder at midpoint of phase
-        if (phaseTimer.current > 1.8 && phaseTimer.current < 1.95 && boulders.length < 3) {
-          const throwDir = new Vector3().subVectors(playerPos, currentPos).normalize();
-          throwDir.y = 0;
-          setBoulders(prev => [
-            ...prev,
-            {
-              id: Date.now() + Math.random(),
-              position: currentPos.clone().add(new Vector3(0, 2, 0)),
-              direction: throwDir,
-              scale: healthPercent < 0.4 ? 1.5 : 1.1,
-              speed: 0.28,
-              distTraveled: 0
-            }
-          ]);
-        }
-      }
-
-      // Close combat contact
-      if (distToPlayer < 3.2) {
-        const now = Date.now();
-        if (now - lastAttackTime.current > 750) {
-          takeDamage(22);
-          lastAttackTime.current = now;
-        }
+        ]);
       }
     }
 
-    // --- RIVER LEVIATHAN LOGIC ---
-    if (type === 'river_leviathan') {
-      if (phaseTimer.current > 5.5) {
-        phaseTimer.current = 0;
-        const phases = ['surface_sweep', 'electrify_storm', 'bridge_assault'];
-        setCurrentPhase(phases[Math.floor(Math.random() * phases.length)]);
-      }
-
-      // Leviathan maneuvers around the river basin (x ~ 0)
-      if (currentPhase === 'surface_sweep') {
-        // Patrols along the river, gliding towards player's Z coordinate
-        const targetZ = playerPos.z;
-        currentPos.z += (targetZ - currentPos.z) * 0.035;
-        currentPos.x = Math.sin(state.clock.elapsedTime * 2) * 3.5; // Snake along river
-        currentPos.y = 0.5 + Math.sin(state.clock.elapsedTime * 3) * 0.4;
-        group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
-      } 
-      else if (currentPhase === 'electrify_storm') {
-        // Rises high in river, electrifying water hazard!
-        currentPos.y = 2.5 + Math.sin(state.clock.elapsedTime * 4) * 0.6;
-        group.current.rotation.y += 0.05;
-        // Periodic tidal orbs
-        if (Math.sin(state.clock.elapsedTime * 6) > 0.85 && boulders.length < 4) {
-          const angle = Math.random() * Math.PI * 2;
-          const orbDir = new Vector3(Math.cos(angle), 0, Math.sin(angle));
-          setBoulders(prev => [
-            ...prev,
-            {
-              id: Date.now() + Math.random(),
-              position: currentPos.clone(),
-              direction: orbDir,
-              scale: 0.7,
-              speed: 0.22,
-              distTraveled: 0
-            }
-          ]);
-        }
-      } 
-      else if (currentPhase === 'bridge_assault') {
-        // Lunges towards the bridge (z = 0) to strike players camping the bridge!
-        const bridgeTarget = new Vector3(0, 0.8, 0);
-        currentPos.lerp(bridgeTarget, 0.04);
-        group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
-        if (Math.abs(playerPos.z) < 4.5 && Math.abs(playerPos.x) < 7.0 && phaseTimer.current > 2.0 && phaseTimer.current < 2.3) {
-          takeDamage(20); // Bridge slam damage!
-        }
-      }
-
-      // Direct contact damage
-      if (distToPlayer < 3.5) {
-        const now = Date.now();
-        if (now - lastAttackTime.current > 700) {
-          takeDamage(25);
-          lastAttackTime.current = now;
-        }
+    // Direct melee contact damage
+    if (distToPlayer < 3.8) {
+      const now = Date.now();
+      if (now - lastAttackTime.current > 750) {
+        takeDamage(26);
+        lastAttackTime.current = now;
       }
     }
 
-    // Update Boulders / Tidal Orbs
+    // Update Boulders / Energy Orbs
     if (boulders.length > 0) {
-      setBoulders(prev =>
+      setBoulders((prev) =>
         prev
-          .map(b => {
+          .map((b) => {
             const nextPos = b.position.clone().add(b.direction.clone().multiplyScalar(b.speed));
             const newDist = b.distTraveled + b.speed;
-            
-            // Check collision with player
-            if (nextPos.distanceTo(playerPos) < (b.scale * 1.4)) {
-              takeDamage(type === 'earth_colossus' ? 22 : 16);
+
+            if (nextPos.distanceTo(playerPos) < b.scale * 1.5) {
+              takeDamage(24);
               return null;
             }
 
-            // Check collision with obstacles (boulder demolishes obstacles!)
-            for (const obs of obstacles) {
+            for (let i = 0; i < obstacles.length; i++) {
+              const obs = obstacles[i];
               const obsPos = new Vector3(obs.position.x, 0, obs.position.z);
               if (obsPos.distanceTo(nextPos) < obs.radius + b.scale) {
-                damageObstacle(obs.id, 60);
-                return null; // Shatter boulder
+                damageObstacle(obs.id, 75);
+                return null;
               }
             }
 
-            if (newDist > 28) return null;
+            if (newDist > 30) return null;
             return { ...b, position: nextPos, distTraveled: newDist };
           })
           .filter(Boolean) as BoulderData[]
@@ -291,17 +255,14 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
   });
 
   const isEnraged = (health / maxHealth) < 0.4;
-  const bossTitle = type === 'earth_colossus' 
-    ? (isEnraged ? '🔥 ТЕКТОНИЧЕСКИЙ КОЛОСС [ЯРОСТЬ]' : '⛰️ ТЕКТОНИЧЕСКИЙ КОЛОСС')
-    : '⚡ РЕЧНОЙ ЛЕВИАФАН [ХОЗЯИН ВОД]';
+  const bossTitle = `${isEnraged ? '🔥 [ЯРОСТЬ] ' : ''}${BOSS_NAMES[type].toUpperCase()}`;
 
   return (
     <>
       <group ref={group} position={position}>
-        {/* EARTH COLOSSUS MESH */}
+        {/* 1. EARTH COLOSSUS (Realm 1) */}
         {type === 'earth_colossus' && (
           <group scale={isEnraged ? 1.25 : 1.1}>
-            {/* Core Torso - Obsidian with glowing magma cracks */}
             <mesh castShadow receiveShadow>
               <dodecahedronGeometry args={[2.0, 0]} />
               <meshStandardMaterial 
@@ -312,19 +273,10 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
                 flatShading
               />
             </mesh>
-
-            {/* Glowing Head */}
             <mesh position={[0, 2.2, 0]} castShadow>
               <boxGeometry args={[1.2, 1.2, 1.2]} />
-              <meshStandardMaterial 
-                color={flash > 0 ? '#ffffff' : '#0f172a'} 
-                emissive="#f59e0b"
-                emissiveIntensity={2.5}
-                flatShading
-              />
+              <meshStandardMaterial color={flash > 0 ? '#ffffff' : '#0f172a'} emissive="#f59e0b" emissiveIntensity={2.5} flatShading />
             </mesh>
-
-            {/* Glowing Horns / Spikes */}
             <mesh position={[0.7, 3.0, 0]} rotation={[0, 0, 0.4]} castShadow>
               <coneGeometry args={[0.3, 1.2, 5]} />
               <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} flatShading />
@@ -333,8 +285,6 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
               <coneGeometry args={[0.3, 1.2, 5]} />
               <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} flatShading />
             </mesh>
-
-            {/* Giant Stone Shoulders / Fists */}
             <mesh position={[2.2, 0.5, 0]} castShadow>
               <dodecahedronGeometry args={[1.1, 0]} />
               <meshStandardMaterial color="#334155" roughness={0.9} flatShading />
@@ -343,34 +293,105 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
               <dodecahedronGeometry args={[1.1, 0]} />
               <meshStandardMaterial color="#334155" roughness={0.9} flatShading />
             </mesh>
+          </group>
+        )}
 
-            {/* Ground Magma Aura Ring */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]}>
-              <ringGeometry args={[2.4, 3.2, 24]} />
-              <meshBasicMaterial 
-                color={isEnraged ? '#ef4444' : '#f97316'} 
-                transparent 
-                opacity={0.6} 
+        {/* 2. MAGMA TITAN (Realm 2) */}
+        {type === 'magma_titan' && (
+          <group scale={1.3}>
+            <mesh castShadow receiveShadow>
+              <octahedronGeometry args={[2.2, 0]} />
+              <meshStandardMaterial
+                color={flash > 0 ? '#ffffff' : '#18181b'}
+                emissive="#ea580c"
+                emissiveIntensity={3.2}
+                roughness={0.7}
+                flatShading
               />
+            </mesh>
+            <mesh position={[0, 2.4, 0]} castShadow>
+              <dodecahedronGeometry args={[1.2, 0]} />
+              <meshStandardMaterial color="#7f1d1d" emissive="#ef4444" emissiveIntensity={3.5} flatShading />
+            </mesh>
+            <mesh position={[2.5, 0.2, 0]} castShadow>
+              <boxGeometry args={[1.2, 1.6, 1.2]} />
+              <meshStandardMaterial color="#292524" emissive="#f97316" emissiveIntensity={3} flatShading />
+            </mesh>
+            <mesh position={[-2.5, 0.2, 0]} castShadow>
+              <boxGeometry args={[1.2, 1.6, 1.2]} />
+              <meshStandardMaterial color="#292524" emissive="#f97316" emissiveIntensity={3} flatShading />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]}>
+              <ringGeometry args={[2.6, 3.8, 24]} />
+              <meshBasicMaterial color="#ea580c" transparent opacity={0.75} />
             </mesh>
           </group>
         )}
 
-        {/* RIVER LEVIATHAN MESH */}
-        {type === 'river_leviathan' && (
-          <group scale={1.2}>
-            {/* Serpentine Head */}
-            <mesh position={[0, 1.5, 0]} castShadow>
-              <coneGeometry args={[1.4, 3.2, 8]} />
-              <meshStandardMaterial 
-                color={flash > 0 ? '#ffffff' : '#0284c7'} 
-                emissive="#38bdf8"
-                emissiveIntensity={2.0}
+        {/* 3. VOID SOVEREIGN (Realm 3) */}
+        {type === 'void_sovereign' && (
+          <group scale={1.25}>
+            <mesh castShadow receiveShadow>
+              <icosahedronGeometry args={[2.0, 0]} />
+              <meshStandardMaterial
+                color={flash > 0 ? '#ffffff' : '#0f172a'}
+                emissive="#9333ea"
+                emissiveIntensity={3.5}
+                roughness={0.2}
                 flatShading
               />
             </mesh>
+            {[0, 1, 2, 3].map((i) => {
+              const ang = (Math.PI / 2) * i;
+              return (
+                <mesh key={i} position={[Math.cos(ang) * 2.6, 0.8, Math.sin(ang) * 2.6]} castShadow>
+                  <octahedronGeometry args={[0.65, 0]} />
+                  <meshStandardMaterial color="#c084fc" emissive="#a855f7" emissiveIntensity={3} flatShading />
+                </mesh>
+              );
+            })}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.0, 0]}>
+              <ringGeometry args={[2.8, 4.2, 32]} />
+              <meshBasicMaterial color="#7c3aed" transparent opacity={0.8} />
+            </mesh>
+          </group>
+        )}
 
-            {/* Glowing Mystic Fins */}
+        {/* 4. GLACIAL DREADNOUGHT (Realm 4) */}
+        {type === 'glacial_dreadnought' && (
+          <group scale={1.3}>
+            <mesh castShadow receiveShadow>
+              <dodecahedronGeometry args={[2.2, 0]} />
+              <meshStandardMaterial
+                color={flash > 0 ? '#ffffff' : '#bae6fd'}
+                emissive="#0284c7"
+                emissiveIntensity={2.5}
+                roughness={0.15}
+                flatShading
+              />
+            </mesh>
+            <mesh position={[0.8, 2.8, 0]} rotation={[0, 0, 0.5]} castShadow>
+              <coneGeometry args={[0.35, 1.8, 5]} />
+              <meshStandardMaterial color="#e0f2fe" emissive="#38bdf8" emissiveIntensity={3} flatShading />
+            </mesh>
+            <mesh position={[-0.8, 2.8, 0]} rotation={[0, 0, -0.5]} castShadow>
+              <coneGeometry args={[0.35, 1.8, 5]} />
+              <meshStandardMaterial color="#e0f2fe" emissive="#38bdf8" emissiveIntensity={3} flatShading />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]}>
+              <ringGeometry args={[2.8, 4.0, 24]} />
+              <meshBasicMaterial color="#38bdf8" transparent opacity={0.75} />
+            </mesh>
+          </group>
+        )}
+
+        {/* 5. RIVER LEVIATHAN */}
+        {type === 'river_leviathan' && (
+          <group scale={1.2}>
+            <mesh position={[0, 1.5, 0]} castShadow>
+              <coneGeometry args={[1.4, 3.2, 8]} />
+              <meshStandardMaterial color={flash > 0 ? '#ffffff' : '#0284c7'} emissive="#38bdf8" emissiveIntensity={2.0} flatShading />
+            </mesh>
             <mesh position={[1.4, 1.8, -0.5]} rotation={[0.4, 0, 0.6]} castShadow>
               <boxGeometry args={[0.2, 1.8, 1.2]} />
               <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} flatShading />
@@ -379,18 +400,10 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
               <boxGeometry args={[0.2, 1.8, 1.2]} />
               <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} flatShading />
             </mesh>
-
-            {/* Serpentine Body Segments */}
             <mesh position={[0, 0.2, -2.0]} castShadow>
               <sphereGeometry args={[1.3, 8, 8]} />
               <meshStandardMaterial color="#0369a1" emissive="#0284c7" emissiveIntensity={1.5} flatShading />
             </mesh>
-            <mesh position={[0, 0.0, -4.0]} castShadow>
-              <sphereGeometry args={[1.0, 8, 8]} />
-              <meshStandardMaterial color="#075985" emissive="#38bdf8" emissiveIntensity={1.2} flatShading />
-            </mesh>
-
-            {/* Water Energy Swirl */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]}>
               <ringGeometry args={[2.5, 4.0, 32]} />
               <meshBasicMaterial color="#38bdf8" transparent opacity={0.7} />
@@ -398,24 +411,28 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
           </group>
         )}
 
-        {/* Floating Boss Health Bar */}
-        <Html position={[0, 4.8, 0]} center pointerEvents="none">
-          <div className="flex flex-col items-center gap-1 w-56">
-            <div className="text-[11px] font-black tracking-widest text-amber-300 drop-shadow uppercase whitespace-nowrap bg-black/60 px-2 py-0.5 rounded-full border border-amber-400/30">
+        {/* Floating In-World Boss Title & Bar */}
+        <Html position={[0, 5.0, 0]} center pointerEvents="none">
+          <div className="flex flex-col items-center gap-1 w-60">
+            <div className="text-[12px] font-black tracking-widest text-amber-300 drop-shadow uppercase whitespace-nowrap bg-black/70 px-3 py-0.5 rounded-full border border-amber-400/40">
               {bossTitle}
             </div>
-            <div className="w-full h-3 bg-black/80 border border-white/40 rounded-full overflow-hidden p-0.5 shadow-lg">
+            <div className="w-full h-3 bg-black/85 border border-white/50 rounded-full overflow-hidden p-0.5 shadow-xl">
               <div 
                 className={`h-full rounded-full transition-all duration-150 ${
-                  type === 'earth_colossus' 
-                    ? 'bg-gradient-to-r from-amber-600 via-orange-500 to-yellow-400' 
-                    : 'bg-gradient-to-r from-blue-600 via-cyan-400 to-teal-300'
+                  type === 'magma_titan' 
+                    ? 'bg-gradient-to-r from-red-600 via-orange-500 to-amber-300'
+                    : type === 'void_sovereign'
+                    ? 'bg-gradient-to-r from-indigo-700 via-purple-500 to-pink-400'
+                    : type === 'glacial_dreadnought'
+                    ? 'bg-gradient-to-r from-sky-600 via-cyan-400 to-white'
+                    : 'bg-gradient-to-r from-amber-600 via-orange-500 to-yellow-400'
                 }`}
-                style={{ width: `${(health / maxHealth) * 100}%` }}
+                style={{ width: `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%` }}
               />
             </div>
-            <div className="text-[10px] font-mono text-white/80">
-              {Math.ceil(health)} / {maxHealth} HP
+            <div className="text-[10px] font-mono text-white/90">
+              {Math.ceil(health).toLocaleString()} / {maxHealth.toLocaleString()} HP
             </div>
           </div>
         </Html>
@@ -423,26 +440,17 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
 
       {/* Telegraph ground ring */}
       {telegraphPos && (
-        <mesh rotation={[-Math.PI/2, 0, 0]} position={[telegraphPos.x, 0.06, telegraphPos.z]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[telegraphPos.x, 0.06, telegraphPos.z]}>
           <ringGeometry args={[telegraphRadius - 0.4, telegraphRadius, 32]} />
           <meshBasicMaterial color="#ef4444" transparent opacity={0.8} />
         </mesh>
       )}
 
-      {/* Render Active Boulders / Projectiles */}
-      {boulders.map(b => (
+      {/* Render Active Projectiles */}
+      {boulders.map((b) => (
         <mesh key={b.id} position={b.position} scale={b.scale} castShadow>
-          {type === 'earth_colossus' ? (
-            <>
-              <dodecahedronGeometry args={[0.9, 0]} />
-              <meshStandardMaterial color="#b45309" emissive="#f97316" emissiveIntensity={2.0} />
-            </>
-          ) : (
-            <>
-              <sphereGeometry args={[0.7, 16, 16]} />
-              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3.5} transparent opacity={0.85} />
-            </>
-          )}
+          <dodecahedronGeometry args={[0.9, 0]} />
+          <meshStandardMaterial color={b.color || '#b45309'} emissive={b.color || '#f97316'} emissiveIntensity={2.5} flatShading />
         </mesh>
       ))}
     </>

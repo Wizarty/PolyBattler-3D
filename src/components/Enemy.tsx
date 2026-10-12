@@ -44,10 +44,14 @@ export function Enemy({ id, position, type, onDeath, onFire, onSplit }: EnemyPro
   const group = useRef<Group>(null);
   const baseStats = ENEMY_BASE_STATS[type];
 
-  // Dynamic time scaling
+  // Dynamic time and realm scaling
   const gameTime = useGameStore((state) => state.time);
-  const timeHpScale = 1 + (gameTime / 60) * 0.35;
-  const timeDmgScale = 1 + (gameTime / 60) * 0.20;
+  const realmLevel = useGameStore((state) => state.realmLevel);
+  const activeBuffs = useGameStore((state) => state.activeBuffs);
+  const biome = useGameStore((state) => state.biome);
+
+  const timeHpScale = (1 + (realmLevel - 1) * 0.40) * (1 + (gameTime / 60) * 0.35);
+  const timeDmgScale = (1 + (realmLevel - 1) * 0.25) * (1 + (gameTime / 60) * 0.20);
 
   const initialHp = Math.round(baseStats.hp * timeHpScale);
   const effectiveDamage = Math.round(baseStats.damage * timeDmgScale);
@@ -148,6 +152,11 @@ export function Enemy({ id, position, type, onDeath, onFire, onSplit }: EnemyPro
       const progress = 1 - Math.max(0, spawnTimer.current / 0.35);
       group.current.scale.setScalar(baseStats.scale * progress);
       group.current.position.y = 1 * progress;
+      return;
+    }
+
+    // Freeze Buff (enemy frozen solid)
+    if (activeBuffs && Date.now() < activeBuffs.freezeUntil) {
       return;
     }
 
@@ -318,7 +327,13 @@ export function Enemy({ id, position, type, onDeath, onFire, onSplit }: EnemyPro
   });
 
   const renderVisuals = () => {
-    const color = flash > 0 ? '#ffffff' : baseStats.color;
+    const isFrozen = activeBuffs && Date.now() < activeBuffs.freezeUntil;
+    let color = flash > 0 ? '#ffffff' : (isFrozen ? '#38bdf8' : baseStats.color);
+    if (!isFrozen && flash === 0 && biome !== 'grove') {
+      if (biome === 'volcanic' && type === 'basic') color = '#f97316';
+      else if (biome === 'void' && type === 'basic') color = '#a855f7';
+      else if (biome === 'tundra' && type === 'basic') color = '#7dd3fc';
+    }
 
     if (burrowedVisual) {
       return (

@@ -877,6 +877,13 @@ export function LevelManager() {
     damageObstacle,
     openChestMiniGame,
     isRiverElectrified,
+    biome,
+    realmLevel,
+    waveTimer,
+    bossActive,
+    setBossActive,
+    applyBuff,
+    setRealmBanner,
   } = useGameStore();
 
   const [enemies, setEnemies] = useState<{ id: string; position: [number, number, number]; type: EnemyType }[]>([]);
@@ -885,8 +892,7 @@ export function LevelManager() {
   const [enemyProjectiles, setEnemyProjectiles] = useState<{ id: number; startPos: Vector3; direction: Vector3 }[]>([]);
   const [debris, setDebris] = useState<DebrisChunk[]>([]);
 
-  const colossusSpawned = useRef(false);
-  const leviathanSpawned = useRef(false);
+  const bossSpawnedForWave = useRef<number>(-1);
 
   // Initialize crisp low-poly obstacles
   useEffect(() => {
@@ -940,8 +946,7 @@ export function LevelManager() {
       setEnemyProjectiles([]);
       setDebris([]);
       entityRegistry.clear();
-      colossusSpawned.current = false;
-      leviathanSpawned.current = false;
+      bossSpawnedForWave.current = -1;
     }
   }, [status, time]);
 
@@ -1013,7 +1018,7 @@ export function LevelManager() {
             if (nextLife <= 0) return null;
 
             const nextPos = chunk.position.clone().add(chunk.velocity.clone().multiplyScalar(delta));
-            chunk.velocity.y -= 18.0 * delta; // Gravity
+            chunk.velocity.y -= 18.0 * delta;
 
             if (nextPos.y < 0.1) {
               nextPos.y = 0.1;
@@ -1032,77 +1037,96 @@ export function LevelManager() {
       );
     }
 
-    // 1. Earth Colossus Boss Spawn at 60s
-    if (time > 60 && !colossusSpawned.current) {
-      colossusSpawned.current = true;
+    // 1. BOSS INVASION: When waveTimer hits 0, summon Realm Boss!
+    if (waveTimer <= 0 && bosses.length === 0 && bossSpawnedForWave.current !== realmLevel) {
+      bossSpawnedForWave.current = realmLevel;
+      setBossActive(true);
+
+      const bossTypes: BossType[] = ['earth_colossus', 'magma_titan', 'void_sovereign', 'glacial_dreadnought'];
+      const targetBossType = bossTypes[(realmLevel - 1) % bossTypes.length];
       const spawnPos = getSmartSpawnPosition(playerPos, obstacles);
-      setBosses((prev) => [
-        ...prev,
+
+      setBosses([
         {
-          id: 'boss-colossus',
-          type: 'earth_colossus',
+          id: `boss-${targetBossType}-${realmLevel}`,
+          type: targetBossType,
           position: spawnPos,
         },
       ]);
+
+      setRealmBanner({
+        title: '⚠️ ПРИБЫТИЕ БОССА!',
+        subtitle: 'Уничтожьте владыку измерения, чтобы трансформировать мир!',
+        color: '#ef4444',
+        timestamp: Date.now(),
+      });
+
+      // Spawn extra minion bodyguard wave around boss!
+      const minionPack: { id: string; position: [number, number, number]; type: EnemyType }[] = [];
+      for (let i = 0; i < 12; i++) {
+        const ang = (Math.PI * 2 / 12) * i;
+        const d = 4 + Math.random() * 3;
+        minionPack.push({
+          id: `minion-guard-${Date.now()}-${i}`,
+          position: [spawnPos[0] + Math.cos(ang) * d, 1, spawnPos[2] + Math.sin(ang) * d],
+          type: i % 2 === 0 ? 'shielded' : 'fast',
+        });
+      }
+      setEnemies((prev) => [...prev, ...minionPack]);
     }
 
-    // 2. River Leviathan Boss Spawn at 120s directly in the river
-    if (time > 120 && !leviathanSpawned.current) {
-      leviathanSpawned.current = true;
-      setBosses((prev) => [
-        ...prev,
-        {
-          id: 'boss-leviathan',
-          type: 'river_leviathan',
-          position: [0, 0.4, playerPos.z > 0 ? -14 : 14],
-        },
-      ]);
-    }
-
-    // Dynamic wave difficulty scaling
-    const spawnRate = Math.max(0.25, 2.0 - (time / 60));
+    // 2. Dynamic Wave Swarm Spawning
+    // Spawns faster and in dense clusters of 2 to 4 enemies!
+    const spawnRate = Math.max(0.12, 1.2 - (time / 80) - (realmLevel * 0.08));
 
     if (Math.random() < delta / spawnRate) {
-      const spawnPos = getSmartSpawnPosition(playerPos, obstacles);
+      // Determine pack size (swarms of 2 - 4 mobs)
+      const clusterSize = Math.min(4, 2 + Math.floor(realmLevel / 2) + (time > 60 ? 1 : 0));
+      const newCluster: { id: string; position: [number, number, number]; type: EnemyType }[] = [];
 
-      let type: EnemyType = 'basic';
-      const rand = Math.random();
+      for (let c = 0; c < clusterSize; c++) {
+        const spawnPos = getSmartSpawnPosition(playerPos, obstacles);
 
-      if (time <= 30) {
-        if (rand > 0.70) type = 'fast';
-        else if (rand > 0.50) type = 'wanderer';
-      } else if (time > 30 && time <= 65) {
-        if (rand > 0.85) type = 'splitter';
-        else if (rand > 0.65) type = 'ranged';
-        else if (rand > 0.45) type = 'fast';
-        else if (rand > 0.30) type = 'wanderer';
-      } else if (time > 65 && time <= 100) {
-        if (rand > 0.88) type = 'goblin';
-        else if (rand > 0.72) type = 'shielded';
-        else if (rand > 0.55) type = 'tank';
-        else if (rand > 0.38) type = 'shaman';
-        else if (rand > 0.20) type = 'splitter';
-        else type = 'ranged';
-      } else if (time > 100) {
-        if (rand > 0.90) type = 'goblin';
-        else if (rand > 0.76) type = 'burrower';
-        else if (rand > 0.62) type = 'shielded';
-        else if (rand > 0.48) type = 'shaman';
-        else if (rand > 0.34) type = 'splitter';
-        else if (rand > 0.20) type = 'tank';
-        else type = 'fast';
+        let type: EnemyType = 'basic';
+        const rand = Math.random();
+
+        if (time <= 30) {
+          if (rand > 0.65) type = 'fast';
+          else if (rand > 0.45) type = 'wanderer';
+          else type = 'basic';
+        } else if (time > 30 && time <= 65) {
+          if (rand > 0.82) type = 'splitter';
+          else if (rand > 0.62) type = 'ranged';
+          else if (rand > 0.42) type = 'fast';
+          else if (rand > 0.25) type = 'wanderer';
+          else type = 'basic';
+        } else if (time > 65 && time <= 100) {
+          if (rand > 0.88) type = 'goblin';
+          else if (rand > 0.72) type = 'shielded';
+          else if (rand > 0.55) type = 'tank';
+          else if (rand > 0.38) type = 'shaman';
+          else if (rand > 0.20) type = 'splitter';
+          else type = 'ranged';
+        } else {
+          if (rand > 0.90) type = 'goblin';
+          else if (rand > 0.76) type = 'burrower';
+          else if (rand > 0.60) type = 'shielded';
+          else if (rand > 0.45) type = 'shaman';
+          else if (rand > 0.30) type = 'splitter';
+          else if (rand > 0.15) type = 'tank';
+          else type = 'fast';
+        }
+
+        newCluster.push({
+          id: `enemy-${Date.now()}-${Math.random()}`,
+          position: spawnPos,
+          type,
+        });
       }
 
       setEnemies((prev) => {
-        if (prev.length > 85) return prev;
-        return [
-          ...prev,
-          {
-            id: `enemy-${Date.now()}-${Math.random()}`,
-            position: spawnPos,
-            type,
-          },
-        ];
+        if (prev.length > 220) return prev; // Dense swarm cap!
+        return [...prev, ...newCluster];
       });
     }
   });
@@ -1127,10 +1151,17 @@ export function LevelManager() {
     let type: PickupType = 'xp';
     let dropValue = value;
 
-    if (r > 0.985) type = 'chest';
-    else if (r > 0.965) type = 'bomb';
-    else if (r > 0.940) type = 'magnet';
-    else if (r > 0.860) {
+    // Ground Buff & Hazard Drops
+    if (r > 0.990) type = 'chest';
+    else if (r > 0.975) type = 'bomb';
+    else if (r > 0.960) type = 'super_magnet';
+    else if (r > 0.940) type = 'buff_damage';
+    else if (r > 0.920) type = 'buff_haste';
+    else if (r > 0.900) type = 'buff_shield';
+    else if (r > 0.880) type = 'buff_freeze';
+    else if (r > 0.860) type = 'mega_heal';
+    else if (r > 0.835) type = 'magnet';
+    else if (r > 0.770) {
       type = 'health';
       dropValue = 35;
     }
@@ -1156,19 +1187,38 @@ export function LevelManager() {
 
   const removeBoss = (id: string, pos: Vector3, value: number) => {
     setBosses((prev) => prev.filter((b) => b.id !== id));
+    setBossActive(false);
+
+    // Shockwave clear: vaporize lower minions with XP bonus!
+    enemies.forEach(() => addXp(12));
+    setEnemies([]);
+
+    // Epic Boss Drops
     setPickups((prev) => [
       ...prev,
       {
         id: `pickup-boss-xp-${Date.now()}`,
         position: [pos.x, 1, pos.z],
         type: 'xp',
-        value,
+        value: value * 1.5,
       },
       {
         id: `pickup-boss-chest-${Date.now()}`,
-        position: [pos.x + 1.2, 1, pos.z],
+        position: [pos.x + 1.4, 1, pos.z],
         type: 'chest',
-        value: 200,
+        value: 300,
+      },
+      {
+        id: `pickup-boss-heal-${Date.now()}`,
+        position: [pos.x - 1.4, 1, pos.z],
+        type: 'mega_heal',
+        value: 65,
+      },
+      {
+        id: `pickup-boss-buff-${Date.now()}`,
+        position: [pos.x, 1, pos.z + 1.4],
+        type: 'buff_damage',
+        value: 1,
       },
     ]);
   };
@@ -1182,6 +1232,23 @@ export function LevelManager() {
       addXp(value);
     } else if (type === 'health') {
       heal(value);
+    } else if (type === 'mega_heal') {
+      heal(65);
+    } else if (type === 'buff_haste') {
+      applyBuff('haste', 8);
+    } else if (type === 'buff_damage') {
+      applyBuff('damage', 8);
+    } else if (type === 'buff_shield') {
+      applyBuff('shield', 6);
+    } else if (type === 'buff_freeze') {
+      applyBuff('freeze', 4);
+    } else if (type === 'super_magnet') {
+      // Sucks all XP on map
+      const allXp = pickups.filter((p) => p.type === 'xp');
+      let totalXp = 0;
+      allXp.forEach((p) => (totalXp += p.value));
+      if (totalXp > 0) addXp(totalXp);
+      setPickups([]);
     } else if (type === 'magnet') {
       const allXp = pickups.filter((p) => p.type === 'xp');
       let totalXp = 0;
@@ -1189,7 +1256,7 @@ export function LevelManager() {
       if (totalXp > 0) addXp(totalXp);
       setPickups((prev) => prev.filter((p) => p.type !== 'xp'));
     } else if (type === 'bomb') {
-      enemies.forEach((e) => addXp(12));
+      enemies.forEach(() => addXp(12));
       setEnemies([]);
     }
   };

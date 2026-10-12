@@ -50,6 +50,36 @@ export interface ChestMiniGame {
   rarity: 'rare' | 'epic' | 'legendary';
 }
 
+export type BiomeType = 'grove' | 'volcanic' | 'void' | 'tundra';
+
+export interface ActiveBuffs {
+  hasteUntil: number;
+  damageUntil: number;
+  shieldUntil: number;
+  freezeUntil: number;
+}
+
+export interface BossInfo {
+  id: string;
+  name: string;
+  health: number;
+  maxHealth: number;
+  phase?: string;
+}
+
+export interface RealmBanner {
+  title: string;
+  subtitle: string;
+  color?: string;
+  timestamp: number;
+}
+
+export interface GroundHazardEffect {
+  slowFactor: number;
+  damagePerSec: number;
+  hazardType: 'acid' | 'lava' | 'mud' | null;
+}
+
 interface PlayerStats {
   moveSpeed: number;
   maxHealth: number;
@@ -99,6 +129,17 @@ interface GameState {
   trial: TrialState | null;
   chestMiniGame: ChestMiniGame | null;
   isRiverElectrified: boolean;
+
+  // Realm & Biome Progression
+  biome: BiomeType;
+  realmLevel: number;
+  waveTimer: number;
+  waveMaxTimer: number;
+  bossActive: boolean;
+  currentBossInfo: BossInfo | null;
+  activeBuffs: ActiveBuffs;
+  realmBanner: RealmBanner | null;
+  groundHazardEffect: GroundHazardEffect | null;
   
   // Meta Progression (Skill Tree)
   skillPoints: number;
@@ -132,6 +173,15 @@ interface GameState {
   openChestMiniGame: (rarity?: 'rare' | 'epic' | 'legendary') => void;
   finishChestMiniGame: (rewardMultiplier: number) => void;
   setRiverElectrified: (electrified: boolean) => void;
+
+  setBiome: (biome: BiomeType) => void;
+  advanceRealm: () => void;
+  setWaveTimer: (seconds: number) => void;
+  setBossActive: (active: boolean) => void;
+  updateBossInfo: (info: BossInfo | null) => void;
+  applyBuff: (buff: 'haste' | 'damage' | 'shield' | 'freeze', durationSeconds: number) => void;
+  setRealmBanner: (banner: RealmBanner | null) => void;
+  setGroundHazardEffect: (effect: GroundHazardEffect | null) => void;
 }
 
 const INITIAL_STATS: PlayerStats = {
@@ -358,6 +408,13 @@ export const COMBOS: Record<string, Combo> = {
   },
 };
 
+export const BIOME_CONFIGS: Record<BiomeType, { name: string; color: string; bossName: string }> = {
+  grove: { name: 'Изумрудная Роща', color: '#10b981', bossName: 'Земляной Колосс' },
+  volcanic: { name: 'Вулканическая Кальдера', color: '#f97316', bossName: 'Магма Титан' },
+  void: { name: 'Бездна Пустоты', color: '#a855f7', bossName: 'Владыка Бездны' },
+  tundra: { name: 'Ледяные Пустоши', color: '#38bdf8', bossName: 'Ледяной Дредноут' },
+};
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
@@ -381,6 +438,17 @@ export const useGameStore = create<GameState>()(
       chestMiniGame: null,
       isRiverElectrified: false,
 
+      // Realm & Biome Progression
+      biome: 'grove',
+      realmLevel: 1,
+      waveTimer: 75,
+      waveMaxTimer: 75,
+      bossActive: false,
+      currentBossInfo: null,
+      activeBuffs: { hasteUntil: 0, damageUntil: 0, shieldUntil: 0, freezeUntil: 0 },
+      realmBanner: null,
+      groundHazardEffect: null,
+
       startGame: () => set({ 
         status: 'playing', 
         health: 120, 
@@ -397,6 +465,20 @@ export const useGameStore = create<GameState>()(
         trial: null,
         chestMiniGame: null,
         isRiverElectrified: false,
+        biome: 'grove',
+        realmLevel: 1,
+        waveTimer: 75,
+        waveMaxTimer: 75,
+        bossActive: false,
+        currentBossInfo: null,
+        activeBuffs: { hasteUntil: 0, damageUntil: 0, shieldUntil: 0, freezeUntil: 0 },
+        realmBanner: {
+          title: 'МИР I: ИЗУМРУДНАЯ РОЩА',
+          subtitle: 'Выживайте до появления первого Босса через 75 сек!',
+          color: '#10b981',
+          timestamp: Date.now()
+        },
+        groundHazardEffect: null,
       }),
       
       pauseGame: () => set((state) => ({ status: state.status === 'playing' ? 'paused' : state.status })),
@@ -425,8 +507,9 @@ export const useGameStore = create<GameState>()(
       
       takeDamage: (amount) => {
         const now = Date.now();
-        const { health, invulnerableUntil, endGame } = get();
+        const { health, invulnerableUntil, activeBuffs, endGame } = get();
         if (now < invulnerableUntil) return;
+        if (activeBuffs && now < activeBuffs.shieldUntil) return; // Invulnerable via Divine Shield buff!
 
         const newHealth = health - amount;
         if (newHealth <= 0) {
@@ -491,7 +574,18 @@ export const useGameStore = create<GameState>()(
         });
       },
       
-      resetGame: () => set({ status: 'menu' }),
+      resetGame: () => set({ 
+        status: 'menu',
+        biome: 'grove',
+        realmLevel: 1,
+        waveTimer: 75,
+        waveMaxTimer: 75,
+        bossActive: false,
+        currentBossInfo: null,
+        activeBuffs: { hasteUntil: 0, damageUntil: 0, shieldUntil: 0, freezeUntil: 0 },
+        realmBanner: null,
+        groundHazardEffect: null,
+      }),
       
       tickTimer: (delta) => set((state) => {
         let currentHealth = state.health;
@@ -504,12 +598,35 @@ export const useGameStore = create<GameState>()(
           currentHealth = Math.min(state.stats.maxHealth, currentHealth + 2.5 * delta);
         }
 
+        // Ground hazard damage tick (Acid/Lava puddle)
+        if (state.groundHazardEffect && state.groundHazardEffect.damagePerSec > 0) {
+          const hazardDmg = state.groundHazardEffect.damagePerSec * delta;
+          if (Date.now() > state.invulnerableUntil && (!state.activeBuffs || Date.now() > state.activeBuffs.shieldUntil)) {
+            currentHealth = Math.max(1, currentHealth - hazardDmg);
+          }
+        }
+
+        // Wave countdown timer
+        let nextWaveTimer = state.waveTimer;
+        let isBossActive = state.bossActive;
+        if (!isBossActive && nextWaveTimer > 0) {
+          nextWaveTimer = Math.max(0, nextWaveTimer - delta);
+          if (nextWaveTimer <= 0) {
+            isBossActive = true;
+          }
+        }
+
+        // Clear expired realmBanner after 5 seconds
+        let currentBanner = state.realmBanner;
+        if (currentBanner && Date.now() - currentBanner.timestamp > 5000) {
+          currentBanner = null;
+        }
+
         // Trial timer
         let updatedTrial = state.trial;
         if (updatedTrial && updatedTrial.active) {
           const newTimeLeft = Math.max(0, updatedTrial.timeLeft - delta);
           if (newTimeLeft <= 0) {
-            // Check success if survive trial
             const success = updatedTrial.type === 'survive' || updatedTrial.currentCount >= updatedTrial.targetCount;
             state.completeTrial(success);
             updatedTrial = null;
@@ -521,7 +638,10 @@ export const useGameStore = create<GameState>()(
         return { 
           time: state.time + delta,
           health: currentHealth,
-          trial: updatedTrial
+          trial: updatedTrial,
+          waveTimer: nextWaveTimer,
+          bossActive: isBossActive,
+          realmBanner: currentBanner
         };
       }),
 
@@ -587,7 +707,6 @@ export const useGameStore = create<GameState>()(
       completeTrial: (success) => {
         const state = get();
         if (success) {
-          // Reward: Heal, +300 Score, +50 XP, and open lucky chest minigame!
           state.heal(50);
           state.addScore(500);
           state.addXp(60);
@@ -603,11 +722,9 @@ export const useGameStore = create<GameState>()(
 
       finishChestMiniGame: (rewardMultiplier) => {
         const state = get();
-        // Give rewards according to wheel multiplier (1x, 2x, 3x)
         state.addScore(250 * rewardMultiplier);
         state.addXp(40 * rewardMultiplier);
         state.heal(25 * rewardMultiplier);
-        // Level up if jackpot multiplier >= 3
         if (rewardMultiplier >= 3) {
           state.addXp(state.maxXp);
         }
@@ -618,6 +735,52 @@ export const useGameStore = create<GameState>()(
       },
 
       setRiverElectrified: (electrified) => set({ isRiverElectrified: electrified }),
+
+      setBiome: (biome) => set({ biome }),
+
+      advanceRealm: () => {
+        const { realmLevel, addScore, heal, addXp, maxXp } = get();
+        const biomes: BiomeType[] = ['grove', 'volcanic', 'void', 'tundra'];
+        const nextRealm = realmLevel + 1;
+        const nextBiome = biomes[(nextRealm - 1) % biomes.length];
+        const config = BIOME_CONFIGS[nextBiome];
+
+        heal(80);
+        addScore(3000 * realmLevel);
+        addXp(maxXp);
+
+        set({
+          realmLevel: nextRealm,
+          biome: nextBiome,
+          waveTimer: 75,
+          waveMaxTimer: 75,
+          bossActive: false,
+          currentBossInfo: null,
+          realmBanner: {
+            title: `МИР ${nextRealm}: ${config.name.toUpperCase()}!`,
+            subtitle: `Локация трансформирована! Враги стали опаснее, впереди новый Босс!`,
+            color: config.color,
+            timestamp: Date.now()
+          }
+        });
+      },
+
+      setWaveTimer: (seconds) => set({ waveTimer: seconds }),
+      setBossActive: (active) => set({ bossActive: active }),
+      updateBossInfo: (info) => set({ currentBossInfo: info }),
+
+      applyBuff: (buff, durationSeconds) => set((state) => {
+        const until = Date.now() + durationSeconds * 1000;
+        const newBuffs = { ...state.activeBuffs };
+        if (buff === 'haste') newBuffs.hasteUntil = Math.max(newBuffs.hasteUntil, until);
+        if (buff === 'damage') newBuffs.damageUntil = Math.max(newBuffs.damageUntil, until);
+        if (buff === 'shield') newBuffs.shieldUntil = Math.max(newBuffs.shieldUntil, until);
+        if (buff === 'freeze') newBuffs.freezeUntil = Math.max(newBuffs.freezeUntil, until);
+        return { activeBuffs: newBuffs };
+      }),
+
+      setRealmBanner: (banner) => set({ realmBanner: banner }),
+      setGroundHazardEffect: (effect) => set({ groundHazardEffect: effect }),
     }),
     {
       name: 'polybattler-storage',

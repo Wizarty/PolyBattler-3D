@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore, COMBOS } from '../store';
-import { Heart, Trophy, Zap, Skull, Clock, Pause, Play, LogOut, Flame, Sparkles, Shield } from 'lucide-react';
+import { Heart, Trophy, Zap, Skull, Pause, Play, LogOut, Flame, Sparkles, Shield, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UpgradeMenu } from './UpgradeMenu';
 import { TestMenu } from './TestMenu';
@@ -23,7 +23,15 @@ export function HUD() {
     resetGame,
     pauseGame,
     resumeGame,
-    setTestMode
+    setTestMode,
+    biome,
+    realmLevel,
+    waveTimer,
+    bossActive,
+    currentBossInfo,
+    activeBuffs,
+    realmBanner,
+    groundHazardEffect
   } = useGameStore();
 
   const [damageFlash, setDamageFlash] = useState(false);
@@ -58,6 +66,20 @@ export function HUD() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const biomeNames: Record<string, { name: string; color: string; icon: string }> = {
+    grove: { name: 'ИЗУМРУДНАЯ РОЩА', color: '#10b981', icon: '🌿' },
+    volcanic: { name: 'ВУЛКАНИЧЕСКАЯ КАЛЬДЕРА', color: '#f97316', icon: '🌋' },
+    void: { name: 'БЕЗДНА ПУСТОТЫ', color: '#a855f7', icon: '🌌' },
+    tundra: { name: 'ЛЕДЯНЫЕ ПУСТОШИ', color: '#38bdf8', icon: '❄️' },
+  };
+  const currentBiome = biomeNames[biome] || biomeNames.grove;
+
+  const now = Date.now();
+  const hasteSec = activeBuffs ? Math.max(0, Math.ceil((activeBuffs.hasteUntil - now) / 1000)) : 0;
+  const dmgSec = activeBuffs ? Math.max(0, Math.ceil((activeBuffs.damageUntil - now) / 1000)) : 0;
+  const shieldSec = activeBuffs ? Math.max(0, Math.ceil((activeBuffs.shieldUntil - now) / 1000)) : 0;
+  const freezeSec = activeBuffs ? Math.max(0, Math.ceil((activeBuffs.freezeUntil - now) / 1000)) : 0;
+
   return (
     <div className="absolute inset-0 pointer-events-none select-none overflow-hidden font-sans text-white">
       
@@ -66,11 +88,54 @@ export function HUD() {
         className={`absolute inset-0 bg-red-500/20 transition-opacity duration-200 pointer-events-none ${damageFlash ? 'opacity-100' : 'opacity-0'}`} 
       />
 
-      {/* Top Bar - Minimalist */}
-      <div className="absolute top-0 left-0 right-0 p-8 flex justify-between items-start pointer-events-auto">
+      {/* Realm Notification Banner */}
+      <AnimatePresence>
+        {realmBanner && (
+          <motion.div
+            initial={{ y: -80, opacity: 0, scale: 0.9 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            className="absolute top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+          >
+            <div 
+              className="px-8 py-4 rounded-2xl border-2 backdrop-blur-xl shadow-2xl flex flex-col items-center text-center"
+              style={{ 
+                backgroundColor: 'rgba(15, 23, 42, 0.94)', 
+                borderColor: realmBanner.color || '#3b82f6',
+                boxShadow: `0 0 45px ${realmBanner.color || '#3b82f6'}66` 
+              }}
+            >
+              <div className="text-2xl font-black tracking-wider" style={{ color: realmBanner.color || '#60a5fa' }}>
+                {realmBanner.title}
+              </div>
+              <div className="text-sm font-medium text-slate-300 mt-1">
+                {realmBanner.subtitle}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Top Bar - Clean & Responsive */}
+      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start pointer-events-auto">
         
-        {/* Left: Stats */}
-        <div className="flex flex-col gap-3 w-80">
+        {/* Left: Stats & Biome */}
+        <div className="flex flex-col gap-2.5 w-80">
+          {/* Realm & Biome Badge */}
+          <div className="flex items-center gap-2">
+            <span 
+              className="text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border shadow-sm backdrop-blur-md flex items-center gap-1.5"
+              style={{ 
+                borderColor: `${currentBiome.color}66`, 
+                backgroundColor: `${currentBiome.color}22`,
+                color: currentBiome.color
+              }}
+            >
+              <span>{currentBiome.icon}</span>
+              <span>МИР {realmLevel}: {currentBiome.name}</span>
+            </span>
+          </div>
+
           {/* Health Bar */}
           <div className="flex items-center gap-3">
             <Heart size={20} className="text-red-500 fill-red-500 flex-shrink-0" />
@@ -104,6 +169,45 @@ export function HUD() {
             <span className="font-mono text-sm font-bold text-yellow-400 flex-shrink-0">УР. {level}</span>
           </div>
 
+          {/* Active Buffs & Debuffs Status Pills */}
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {hasteSec > 0 && (
+              <div className="bg-yellow-500/20 border border-yellow-400/50 px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.3)]">
+                <span>🏃</span> УСКОРЕНИЕ ({hasteSec}с)
+              </div>
+            )}
+            {dmgSec > 0 && (
+              <div className="bg-red-500/20 border border-red-400/50 px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]">
+                <span>⚔️</span> УРОН x2 ({dmgSec}с)
+              </div>
+            )}
+            {shieldSec > 0 && (
+              <div className="bg-cyan-500/20 border border-cyan-400/50 px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                <span>🛡️</span> НЕУЯЗВИМОСТЬ ({shieldSec}с)
+              </div>
+            )}
+            {freezeSec > 0 && (
+              <div className="bg-sky-500/20 border border-sky-400/50 px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold text-sky-300 shadow-[0_0_10px_rgba(56,189,248,0.3)]">
+                <span>❄️</span> ЗАМОРОЗКА ({freezeSec}с)
+              </div>
+            )}
+
+            {/* Ground Hazard Warning */}
+            {groundHazardEffect && (
+              <div className={`px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold shadow-md ${
+                groundHazardEffect.hazardType === 'acid' 
+                  ? 'bg-emerald-950/80 border border-emerald-400/60 text-emerald-300'
+                  : groundHazardEffect.hazardType === 'lava'
+                  ? 'bg-orange-950/80 border border-orange-500/60 text-orange-300'
+                  : 'bg-purple-950/80 border border-purple-500/60 text-purple-300'
+              }`}>
+                {groundHazardEffect.hazardType === 'acid' && '☠️ В КИСЛОТЕ (-40% ск, яд)'}
+                {groundHazardEffect.hazardType === 'lava' && '🔥 В ЛАВЕ (горение)'}
+                {groundHazardEffect.hazardType === 'mud' && '🕸️ В ТРЯСИНЕ (-50% ск)'}
+              </div>
+            )}
+          </div>
+
           {/* Active Combos Badges */}
           {activeCombos.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-1">
@@ -135,13 +239,47 @@ export function HUD() {
           )}
         </div>
 
-        {/* Center: Timer */}
-        <div className="absolute top-8 left-1/2 -translate-x-1/2 font-mono text-2xl font-bold tracking-widest opacity-80">
+        {/* Center: Top Objective & Boss Health Bar */}
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 min-w-[320px]">
+          {/* Main Time */}
+          <div className="font-mono text-xl font-black tracking-widest opacity-70">
             {formatTime(time)}
+          </div>
+
+          {/* If Boss Active: Top Epic Boss Bar */}
+          {currentBossInfo && bossActive ? (
+            <div className="w-full max-w-md bg-black/80 backdrop-blur-md border border-red-500/50 rounded-xl p-2.5 shadow-[0_0_30px_rgba(239,68,68,0.35)] flex flex-col gap-1">
+              <div className="flex justify-between items-center px-1">
+                <span className="text-xs font-black text-red-400 tracking-wider flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="animate-pulse" />
+                  {currentBossInfo.name.toUpperCase()}
+                </span>
+                <span className="font-mono text-xs text-white/90 font-bold">
+                  {Math.ceil(currentBossInfo.health)} / {currentBossInfo.maxHealth}
+                </span>
+              </div>
+              <div className="h-3 w-full bg-red-950/80 rounded-full overflow-hidden p-0.5 border border-red-600/40">
+                <div 
+                  className="h-full bg-gradient-to-r from-red-600 via-orange-500 to-amber-300 rounded-full transition-all duration-150"
+                  style={{ width: `${Math.max(0, Math.min(100, (currentBossInfo.health / currentBossInfo.maxHealth) * 100))}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Boss Wave Countdown */
+            <div className={`px-4 py-1 rounded-full border backdrop-blur-md flex items-center gap-2 font-mono text-xs font-bold transition-all ${
+              waveTimer <= 15 
+                ? 'bg-red-500/25 border-red-400 text-red-300 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.4)]'
+                : 'bg-black/50 border-white/20 text-white/80'
+            }`}>
+              <AlertTriangle size={13} className={waveTimer <= 15 ? 'text-red-400' : 'text-amber-400'} />
+              <span>БОСС ЧЕРЕЗ: {formatTime(waveTimer)}</span>
+            </div>
+          )}
         </div>
 
         {/* Right: Score & Pause */}
-        <div className="text-right flex flex-col items-end gap-2">
+        <div className="text-right flex flex-col items-end gap-1.5">
           <div className="font-mono text-3xl font-bold tracking-tighter">
             {score.toLocaleString()}
           </div>
@@ -150,7 +288,7 @@ export function HUD() {
           {status === 'playing' && (
             <button 
               onClick={pauseGame}
-              className="mt-2 p-2 rounded-full hover:bg-white/10 transition-colors opacity-50 hover:opacity-100"
+              className="mt-1 p-2 rounded-full hover:bg-white/10 transition-colors opacity-50 hover:opacity-100"
             >
               <Pause size={24} />
             </button>

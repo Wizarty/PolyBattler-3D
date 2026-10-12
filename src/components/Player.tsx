@@ -162,7 +162,7 @@ function GarlicAura({
 export function Player() {
   const group = useRef<Group>(null);
   const modelRef = useRef<Group>(null);
-  const { status, stats, inventory, activeCombos } = useGameStore();
+  const { status, stats, inventory, activeCombos, activeBuffs, groundHazardEffect } = useGameStore();
   
   // Movement state
   const keys = useRef<{ [key: string]: boolean }>({});
@@ -193,9 +193,17 @@ export function Player() {
     if (keys.current['KeyA'] || keys.current['ArrowLeft']) direction.x -= 1;
     if (keys.current['KeyD'] || keys.current['ArrowRight']) direction.x += 1;
 
+    // Base speed + buffs & hazards
+    let currentSpeed = stats.moveSpeed;
+    if (activeBuffs && Date.now() < activeBuffs.hasteUntil) {
+      currentSpeed *= 1.55; // +55% Haste buff speed boost
+    }
+    if (groundHazardEffect && groundHazardEffect.slowFactor < 1) {
+      currentSpeed *= groundHazardEffect.slowFactor; // Mud or toxic puddle slow
+    }
+
     // Dash (Spacebar, 2.5s cooldown)
     const now = state.clock.elapsedTime;
-    let currentSpeed = stats.moveSpeed;
     if (keys.current['Space'] && now - lastDashTime.current > 2.5 && direction.length() > 0) {
       lastDashTime.current = now;
       currentSpeed *= 3.5; // Quick dodge burst!
@@ -267,18 +275,57 @@ export function Player() {
   const isSanctuary = activeCombos.includes('sanctuary');
   const isMolten = activeCombos.includes('molten_spores');
 
+  // Double Damage Buff
+  const isBuffDamage = activeBuffs && Date.now() < activeBuffs.damageUntil;
+  const damageMult = isBuffDamage ? 2.0 : 1.0;
+
   const swordUpgrade = inventory.find(i => i.id === 'sword');
   const swordCount = swordUpgrade ? 1 + Math.floor(swordUpgrade.level / 2) + stats.projectileCount : 0;
-  let swordDamage = 25 * stats.might * (swordUpgrade ? 1 + (swordUpgrade.level * 0.25) : 1);
+  let swordDamage = 25 * stats.might * (swordUpgrade ? 1 + (swordUpgrade.level * 0.25) : 1) * damageMult;
   if (isBurning) swordDamage *= 2.0;
   if (isThorn) swordDamage *= 1.35;
 
   const garlicUpgrade = inventory.find(i => i.id === 'garlic');
   const garlicRadius = garlicUpgrade ? 2.8 * stats.area * (1 + (garlicUpgrade.level * 0.12)) : 0;
-  const garlicDamage = garlicUpgrade ? 8 * stats.might * (1 + (garlicUpgrade.level * 0.25)) : 0;
+  const garlicDamage = garlicUpgrade ? 8 * stats.might * (1 + (garlicUpgrade.level * 0.25)) * damageMult : 0;
+
+  const hasShield = activeBuffs && Date.now() < activeBuffs.shieldUntil;
+  const hasHaste = activeBuffs && Date.now() < activeBuffs.hasteUntil;
+  const hasDamage = isBuffDamage;
 
   return (
     <group ref={group} position={[0, 1, 0]}>
+      {/* Divine Shield Energy Bubble */}
+      {hasShield && (
+        <mesh position={[0, 0.6, 0]}>
+          <sphereGeometry args={[1.5, 16, 16]} />
+          <meshStandardMaterial 
+            color="#06b6d4" 
+            emissive="#22d3ee" 
+            emissiveIntensity={2.5} 
+            transparent 
+            opacity={0.35} 
+            depthWrite={false} 
+          />
+        </mesh>
+      )}
+
+      {/* Haste Aura Ring */}
+      {hasHaste && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]}>
+          <ringGeometry args={[0.9, 1.3, 20]} />
+          <meshBasicMaterial color="#facc15" transparent opacity={0.65} />
+        </mesh>
+      )}
+
+      {/* Double Damage Floating Flame Gem */}
+      {hasDamage && (
+        <mesh position={[0, 1.8, 0]}>
+          <octahedronGeometry args={[0.25, 0]} />
+          <meshStandardMaterial color="#ef4444" emissive="#dc2626" emissiveIntensity={3.5} />
+        </mesh>
+      )}
+
       {/* Visual Model that rotates */}
       <group ref={modelRef}>
         {/* Body */}
