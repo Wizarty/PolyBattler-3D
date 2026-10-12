@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3, Group, Mesh } from 'three';
 import { useGameStore } from '../store';
+import { entityRegistry } from '../utils/entityRegistry';
 
 // Weapons
 function OrbitingSword({ 
@@ -43,24 +44,16 @@ function OrbitingSword({
     mesh.current.getWorldPosition(worldPos);
     const now = state.clock.elapsedTime;
     
-    // Enemy Hit with cadence (at most once every 0.35s per enemy)
-    state.scene.traverse((object) => {
-      if (object.userData.type === 'enemy') {
-        if (object.position.distanceTo(worldPos) < 1.7) {
-          const lastHit = lastHitMap.current.get(object) || 0;
-          if (now - lastHit >= 0.32) {
-            lastHitMap.current.set(object, now);
-            if (object.userData.hit) object.userData.hit(damage);
-          }
-        }
+    // Instant enemy hit detection via entityRegistry (Zero scene.traverse lag)
+    const nearbyEnemies = entityRegistry.getEnemiesInRadius(worldPos, 1.8);
+    for (let i = 0; i < nearbyEnemies.length; i++) {
+      const enemy = nearbyEnemies[i];
+      const lastHit = lastHitMap.current.get(enemy.id) || 0;
+      if (now - lastHit >= 0.32) {
+        lastHitMap.current.set(enemy.id, now);
+        if (enemy.hit) enemy.hit(damage, worldPos, isBurning ? '#f97316' : '#ffffff');
       }
-      // Thorn Guard: Destroy enemy projectiles
-      if (isThorn && object.userData.type === 'enemy_projectile') {
-        if (object.position.distanceTo(worldPos) < 1.8) {
-          if (object.userData.destroy) object.userData.destroy();
-        }
-      }
-    });
+    }
 
     // Obstacle Hit
     for (const obs of obstacles) {
@@ -126,17 +119,15 @@ function GarlicAura({
       const worldPos = new Vector3();
       mesh.current.getWorldPosition(worldPos);
 
-      // Enemy Hit & Slow
-      state.scene.traverse((object) => {
-        if (object.userData.type === 'enemy') {
-          if (object.position.distanceTo(worldPos) < effectiveRadius) {
-            if (object.userData.hit) object.userData.hit(effectiveDamage);
-            if (isSanctuary && object.userData.slow) {
-              object.userData.slow(0.65); // 35% slow
-            }
-          }
+      // Instant Enemy Hit & Slow via entityRegistry
+      const nearbyEnemies = entityRegistry.getEnemiesInRadius(worldPos, effectiveRadius);
+      for (let i = 0; i < nearbyEnemies.length; i++) {
+        const enemy = nearbyEnemies[i];
+        if (enemy.hit) enemy.hit(effectiveDamage, worldPos, isMolten ? '#ea580c' : '#fcd34d');
+        if (isSanctuary && enemy.slow) {
+          enemy.slow(0.65); // 35% slow
         }
-      });
+      }
 
       // Obstacle Hit
       for (const obs of obstacles) {

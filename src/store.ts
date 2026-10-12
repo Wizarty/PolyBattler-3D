@@ -403,12 +403,22 @@ export const useGameStore = create<GameState>()(
       resumeGame: () => set((state) => ({ status: state.status === 'paused' ? 'playing' : state.status })),
       
       endGame: () => {
-        const { score, highScore, skillPoints } = get();
+        const { score, highScore, skillPoints, level } = get();
         set({ 
           status: 'gameover', 
           highScore: Math.max(score, highScore),
           skillPoints: skillPoints + Math.floor(score / 100)
         });
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              type: 'GAMEHUB_GAME_OVER',
+              gameId: 'poly-battler',
+              score: Math.max(score, 0),
+              metadata: { level, score }
+            }, '*');
+          }
+        } catch (e) {}
       },
 
       addScore: (amount) => set((state) => ({ score: state.score + amount })),

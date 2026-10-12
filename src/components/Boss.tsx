@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3, Group, Mesh } from 'three';
 import { useGameStore } from '../store';
 import { Html } from '@react-three/drei';
+import { entityRegistry } from '../utils/entityRegistry';
 
 export type BossType = 'earth_colossus' | 'river_leviathan';
 
@@ -58,37 +59,50 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
     };
   }, [type, setRiverElectrified]);
 
-  // Setup hit handler
+  // Setup hit handler & register in entityRegistry
   useEffect(() => {
     if (group.current) {
+      const hitHandler = (amount: number) => {
+        setHealth((h) => {
+          const newHealth = Math.max(0, h - amount);
+          setFlash(5);
+
+          // Pop damage number
+          if (group.current) {
+            const headPos = group.current.position.clone().add(new Vector3((Math.random()-0.5)*1.5, 3.5, (Math.random()-0.5)*1.5));
+            addDamageNumber(amount, headPos, '#fbbf24', amount > 40);
+          }
+
+          if (newHealth <= 0) {
+            addScore(type === 'earth_colossus' ? 2500 : 4000);
+            if (type === 'river_leviathan') {
+              setRiverElectrified(false);
+            }
+            if (group.current) {
+              onDeath(group.current.position.clone(), 600); // Massive XP
+            }
+          }
+          return newHealth;
+        });
+      };
+
       group.current.userData = {
         type: 'enemy',
-        hit: (amount: number) => {
-          setHealth((h) => {
-            const newHealth = Math.max(0, h - amount);
-            setFlash(5);
-
-            // Pop damage number
-            if (group.current) {
-              const headPos = group.current.position.clone().add(new Vector3((Math.random()-0.5)*1.5, 3.5, (Math.random()-0.5)*1.5));
-              addDamageNumber(amount, headPos, '#fbbf24', amount > 40);
-            }
-
-            if (newHealth <= 0) {
-              addScore(type === 'earth_colossus' ? 2500 : 4000);
-              if (type === 'river_leviathan') {
-                setRiverElectrified(false);
-              }
-              if (group.current) {
-                onDeath(group.current.position.clone(), 600); // Massive XP
-              }
-            }
-            return newHealth;
-          });
-        }
+        hit: hitHandler
       };
+
+      entityRegistry.registerEnemy({
+        id,
+        position: group.current.position,
+        radius: 2.5,
+        hit: hitHandler
+      });
     }
-  }, [addScore, addDamageNumber, onDeath, type, setRiverElectrified]);
+
+    return () => {
+      entityRegistry.unregisterEnemy(id);
+    };
+  }, [id, addScore, addDamageNumber, onDeath, type, setRiverElectrified]);
 
   useFrame((state, delta) => {
     if (status !== 'playing' || !group.current) return;
@@ -295,6 +309,7 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
                 emissive={isEnraged ? '#ea580c' : '#c2410c'}
                 emissiveIntensity={isEnraged ? 2.8 : 1.2}
                 roughness={0.8}
+                flatShading
               />
             </mesh>
 
@@ -305,27 +320,28 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
                 color={flash > 0 ? '#ffffff' : '#0f172a'} 
                 emissive="#f59e0b"
                 emissiveIntensity={2.5}
+                flatShading
               />
             </mesh>
 
             {/* Glowing Horns / Spikes */}
             <mesh position={[0.7, 3.0, 0]} rotation={[0, 0, 0.4]} castShadow>
               <coneGeometry args={[0.3, 1.2, 5]} />
-              <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} />
+              <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} flatShading />
             </mesh>
             <mesh position={[-0.7, 3.0, 0]} rotation={[0, 0, -0.4]} castShadow>
               <coneGeometry args={[0.3, 1.2, 5]} />
-              <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} />
+              <meshStandardMaterial color="#f97316" emissive="#ef4444" emissiveIntensity={2.0} flatShading />
             </mesh>
 
             {/* Giant Stone Shoulders / Fists */}
             <mesh position={[2.2, 0.5, 0]} castShadow>
               <dodecahedronGeometry args={[1.1, 0]} />
-              <meshStandardMaterial color="#334155" roughness={0.9} />
+              <meshStandardMaterial color="#334155" roughness={0.9} flatShading />
             </mesh>
             <mesh position={[-2.2, 0.5, 0]} castShadow>
               <dodecahedronGeometry args={[1.1, 0]} />
-              <meshStandardMaterial color="#334155" roughness={0.9} />
+              <meshStandardMaterial color="#334155" roughness={0.9} flatShading />
             </mesh>
 
             {/* Ground Magma Aura Ring */}
@@ -350,27 +366,28 @@ export function Boss({ id, type = 'earth_colossus', position, onDeath }: BossPro
                 color={flash > 0 ? '#ffffff' : '#0284c7'} 
                 emissive="#38bdf8"
                 emissiveIntensity={2.0}
+                flatShading
               />
             </mesh>
 
             {/* Glowing Mystic Fins */}
             <mesh position={[1.4, 1.8, -0.5]} rotation={[0.4, 0, 0.6]} castShadow>
               <boxGeometry args={[0.2, 1.8, 1.2]} />
-              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} />
+              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} flatShading />
             </mesh>
             <mesh position={[-1.4, 1.8, -0.5]} rotation={[0.4, 0, -0.6]} castShadow>
               <boxGeometry args={[0.2, 1.8, 1.2]} />
-              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} />
+              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={3} flatShading />
             </mesh>
 
             {/* Serpentine Body Segments */}
             <mesh position={[0, 0.2, -2.0]} castShadow>
-              <sphereGeometry args={[1.3, 12, 12]} />
-              <meshStandardMaterial color="#0369a1" emissive="#0284c7" emissiveIntensity={1.5} />
+              <sphereGeometry args={[1.3, 8, 8]} />
+              <meshStandardMaterial color="#0369a1" emissive="#0284c7" emissiveIntensity={1.5} flatShading />
             </mesh>
             <mesh position={[0, 0.0, -4.0]} castShadow>
-              <sphereGeometry args={[1.0, 12, 12]} />
-              <meshStandardMaterial color="#075985" emissive="#38bdf8" emissiveIntensity={1.2} />
+              <sphereGeometry args={[1.0, 8, 8]} />
+              <meshStandardMaterial color="#075985" emissive="#38bdf8" emissiveIntensity={1.2} flatShading />
             </mesh>
 
             {/* Water Energy Swirl */}

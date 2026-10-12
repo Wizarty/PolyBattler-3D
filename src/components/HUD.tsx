@@ -193,6 +193,49 @@ export function HUD() {
           </motion.div>
         )}
 
+        {/* Mobile / Tablet On-Screen Touch Controls */}
+        {status === 'playing' && (
+          <div className="absolute bottom-6 left-6 pointer-events-auto flex flex-col items-center gap-1 opacity-75 hover:opacity-100 transition-opacity select-none touch-none">
+            <button 
+              onPointerDown={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))}
+              onPointerUp={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))}
+              onPointerLeave={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))}
+              className="w-12 h-12 bg-white/20 backdrop-blur border border-white/20 rounded-xl flex items-center justify-center font-bold text-xl active:bg-white/50 text-white shadow-lg"
+            >▲</button>
+            <div className="flex gap-1">
+              <button 
+                onPointerDown={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA' }))}
+                onPointerUp={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))}
+                onPointerLeave={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))}
+                className="w-12 h-12 bg-white/20 backdrop-blur border border-white/20 rounded-xl flex items-center justify-center font-bold text-xl active:bg-white/50 text-white shadow-lg"
+              >◀</button>
+              <button 
+                onPointerDown={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS' }))}
+                onPointerUp={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyS' }))}
+                onPointerLeave={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyS' }))}
+                className="w-12 h-12 bg-white/20 backdrop-blur border border-white/20 rounded-xl flex items-center justify-center font-bold text-xl active:bg-white/50 text-white shadow-lg"
+              >▼</button>
+              <button 
+                onPointerDown={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }))}
+                onPointerUp={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD' }))}
+                onPointerLeave={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD' }))}
+                className="w-12 h-12 bg-white/20 backdrop-blur border border-white/20 rounded-xl flex items-center justify-center font-bold text-xl active:bg-white/50 text-white shadow-lg"
+              >▶</button>
+            </div>
+          </div>
+        )}
+
+        {status === 'playing' && (
+          <div className="absolute bottom-8 right-8 pointer-events-auto select-none touch-none">
+            <button 
+              onPointerDown={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))}
+              onPointerUp={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }))}
+              onPointerLeave={() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }))}
+              className="w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-500 border border-white/30 shadow-xl flex items-center justify-center font-black text-xs active:scale-90 text-white"
+            >⚡ DASH</button>
+          </div>
+        )}
+
         {status === 'menu' && (
           <motion.div 
             initial={{ opacity: 0 }} 
