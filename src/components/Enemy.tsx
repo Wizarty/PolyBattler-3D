@@ -14,11 +14,11 @@ interface EnemyProps {
 }
 
 const ENEMY_TYPES = {
-  basic: { speed: 0.10, hp: 100, color: '#ef4444', scale: 1.0, xp: 20, damage: 30, range: 0 },
-  fast: { speed: 0.16, hp: 60, color: '#fbbf24', scale: 0.8, xp: 25, damage: 25, range: 0 },
-  tank: { speed: 0.07, hp: 500, color: '#7f1d1d', scale: 2.0, xp: 100, damage: 60, range: 0 },
-  ranged: { speed: 0.08, hp: 80, color: '#10b981', scale: 1.0, xp: 35, damage: 35, range: 14 },
-  wanderer: { speed: 0.12, hp: 70, color: '#8b5cf6', scale: 0.9, xp: 30, damage: 35, range: 0 },
+  basic: { speed: 0.08, hp: 40, color: '#ef4444', scale: 1.0, xp: 12, damage: 10, range: 0 },
+  fast: { speed: 0.12, hp: 25, color: '#fbbf24', scale: 0.8, xp: 15, damage: 8, range: 0 },
+  tank: { speed: 0.045, hp: 180, color: '#7f1d1d', scale: 1.9, xp: 60, damage: 20, range: 0 },
+  ranged: { speed: 0.065, hp: 35, color: '#10b981', scale: 1.0, xp: 20, damage: 10, range: 13 },
+  wanderer: { speed: 0.085, hp: 45, color: '#8b5cf6', scale: 0.9, xp: 20, damage: 12, range: 0 },
 };
 
 export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
@@ -32,6 +32,8 @@ export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
   const lastAbilityTime = useRef(0);
   const wanderTarget = useRef<Vector3 | null>(null);
   const isEnraged = useRef(false);
+  const slowMultiplier = useRef(1);
+  const slowUntil = useRef(0);
   
   // Visual only
   const [visualHealth, setVisualHealth] = useState(stats.hp);
@@ -44,6 +46,10 @@ export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
     if (group.current) {
       group.current.userData = {
         type: 'enemy',
+        slow: (factor: number) => {
+          slowMultiplier.current = factor;
+          slowUntil.current = Date.now() + 600;
+        },
         hit: (amount: number) => {
           if (isDeadRef.current) return;
 
@@ -78,22 +84,26 @@ export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
     // ABILITIES & SPEED MODIFIERS
     let currentSpeed = stats.speed;
 
+    // Slow effect from Sanctuary aura
+    if (Date.now() < slowUntil.current) {
+      currentSpeed *= slowMultiplier.current;
+    }
+
     // Tank Enrage
     if (type === 'tank') {
-        if (!isEnraged.current && healthRef.current < stats.hp * 0.5) {
+        if (!isEnraged.current && healthRef.current < stats.hp * 0.4) {
             isEnraged.current = true;
         }
         if (isEnraged.current) {
-            currentSpeed *= 1.8; // Angry charge!
+            currentSpeed *= 1.4; // Controlled angry charge
         }
     }
 
     // Fast Dash
     if (type === 'fast') {
-        if (now - lastAbilityTime.current > 3000) {
-            // Dash duration 0.5s
-            if (now - lastAbilityTime.current < 3500) {
-                currentSpeed *= 3.0; 
+        if (now - lastAbilityTime.current > 3500) {
+            if (now - lastAbilityTime.current < 4000) {
+                currentSpeed *= 1.7; 
             } else {
                 lastAbilityTime.current = now;
             }
@@ -102,11 +112,10 @@ export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
 
     // Wanderer Blink
     if (type === 'wanderer') {
-        if (now - lastAbilityTime.current > 4000) {
+        if (now - lastAbilityTime.current > 4500) {
             lastAbilityTime.current = now;
-            // Blink 5 units closer
             const blinkDir = new Vector3().subVectors(playerPos, currentPos).normalize();
-            currentPos.add(blinkDir.multiplyScalar(5));
+            currentPos.add(blinkDir.multiplyScalar(3.2));
         }
     }
 
@@ -132,32 +141,22 @@ export function Enemy({ id, position, type, onDeath, onFire }: EnemyProps) {
     } else if (type === 'ranged') {
         // Ranged keeps distance
         if (dist > stats.range * 0.8) {
-             // Chase if too far
              moveDir = new Vector3().subVectors(playerPos, currentPos).normalize();
              group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
         } else if (dist < stats.range * 0.4) {
-             // Flee if too close
              moveDir = new Vector3().subVectors(currentPos, playerPos).normalize();
-             moveDir.multiplyScalar(0.8); // Flee slower
+             moveDir.multiplyScalar(0.7);
              group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
         } else {
-             // Strafe/Stand still
              group.current.lookAt(playerPos.x, currentPos.y, playerPos.z);
         }
         
         // Ranged Attack
-        if (now - lastAttackTime.current > 2000 && dist < stats.range + 5) {
+        if (now - lastAttackTime.current > 2500 && dist < stats.range + 4) {
             lastAttackTime.current = now;
             if (onFire) {
                 const dir = new Vector3().subVectors(playerPos, currentPos).normalize();
-                // Fire from center height (y=1)
                 onFire(currentPos.clone(), dir);
-
-                // Ability: Triple Shot
-                if (Math.random() > 0.5) {
-                    setTimeout(() => onFire(currentPos.clone(), dir.clone().applyAxisAngle(new Vector3(0,1,0), 0.2)), 150);
-                    setTimeout(() => onFire(currentPos.clone(), dir.clone().applyAxisAngle(new Vector3(0,1,0), -0.2)), 300);
-                }
             }
         }
 

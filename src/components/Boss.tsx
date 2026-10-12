@@ -11,8 +11,8 @@ interface BossProps {
 
 export function Boss({ position, onDeath }: BossProps) {
   const group = useRef<Group>(null);
-  const [health, setHealth] = useState(2000);
-  const maxHealth = 2000;
+  const [health, setHealth] = useState(1000);
+  const maxHealth = 1000;
   const { status, takeDamage, addScore } = useGameStore();
   const lastAttackTime = useRef(0);
   const [flash, setFlash] = useState(0);
@@ -31,7 +31,7 @@ export function Boss({ position, onDeath }: BossProps) {
             if (newHealth <= 0) {
               addScore(1000);
               if (group.current) {
-                  onDeath(group.current.position.clone(), 500); // Huge XP
+                  onDeath(group.current.position.clone(), 350); // Huge XP
               }
             }
             return newHealth;
@@ -77,8 +77,8 @@ export function Boss({ position, onDeath }: BossProps) {
     // Collision/Attack
     if (dist < 2.5) {
       const now = Date.now();
-      if (now - lastAttackTime.current > 500) {
-        takeDamage(30);
+      if (now - lastAttackTime.current > 600) {
+        takeDamage(18);
         lastAttackTime.current = now;
       }
     }

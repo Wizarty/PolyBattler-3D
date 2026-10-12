@@ -25,6 +25,7 @@ export interface Combo {
 interface PlayerStats {
   moveSpeed: number;
   maxHealth: number;
+  healthRegen: number;
   pickupRange: number;
   might: number;
   area: number;
@@ -58,6 +59,7 @@ interface GameState {
   health: number;
   xp: number;
   maxXp: number;
+  invulnerableUntil: number;
   
   stats: PlayerStats;
   inventory: ActiveUpgrade[];
@@ -91,9 +93,10 @@ interface GameState {
 }
 
 const INITIAL_STATS: PlayerStats = {
-  moveSpeed: 0.15,
-  maxHealth: 100,
-  pickupRange: 3,
+  moveSpeed: 0.18,
+  maxHealth: 120,
+  healthRegen: 0.4,
+  pickupRange: 4.0,
   might: 1,
   area: 1,
   cooldown: 0,
@@ -104,8 +107,8 @@ const INITIAL_STATS: PlayerStats = {
 export const UPGRADES: Record<string, Upgrade> = {
   'sword': {
     id: 'sword',
-    name: 'Orbiting Sword',
-    description: 'A sword that orbits around you.',
+    name: 'Orbiting Blade',
+    description: 'Blades orbit around you, slicing nearby foes.',
     type: 'weapon',
     element: 'physical',
     maxLevel: 8,
@@ -113,8 +116,8 @@ export const UPGRADES: Record<string, Upgrade> = {
   },
   'magic_missile': {
     id: 'magic_missile',
-    name: 'Magic Missile',
-    description: 'Fires magic projectiles at nearest enemies.',
+    name: 'Arcane Missiles',
+    description: 'Fires homing arcane bolts that seek nearest enemies.',
     type: 'weapon',
     element: 'arcane',
     maxLevel: 8,
@@ -122,8 +125,8 @@ export const UPGRADES: Record<string, Upgrade> = {
   },
   'fireball': {
     id: 'fireball',
-    name: 'Fireball',
-    description: 'Fires a high damage fireball.',
+    name: 'Pyroblast',
+    description: 'Launches fiery blast dealing heavy area damage.',
     type: 'weapon',
     element: 'fire',
     maxLevel: 8,
@@ -131,8 +134,8 @@ export const UPGRADES: Record<string, Upgrade> = {
   },
   'lightning': {
     id: 'lightning',
-    name: 'Lightning Ring',
-    description: 'Strikes random enemies with lightning.',
+    name: 'Thunderstrike',
+    description: 'Calls down thunderbolts to strike random enemies.',
     type: 'weapon',
     element: 'lightning',
     maxLevel: 8,
@@ -140,8 +143,8 @@ export const UPGRADES: Record<string, Upgrade> = {
   },
   'garlic': {
     id: 'garlic',
-    name: 'Garlic Aura',
-    description: 'Damages enemies in a radius.',
+    name: 'Nature Aura',
+    description: 'Radiates a damaging protective circle around you.',
     type: 'weapon',
     element: 'nature',
     maxLevel: 8,
@@ -150,70 +153,117 @@ export const UPGRADES: Record<string, Upgrade> = {
   'spinach': {
     id: 'spinach',
     name: 'Spinach',
-    description: 'Increases damage by 10%.',
+    description: 'Increases all damage by +15%.',
     type: 'passive',
     element: 'nature',
     maxLevel: 5,
     apply: (state) => ({ 
-      stats: { ...state.stats, might: state.stats.might + 0.1 } 
+      stats: { ...state.stats, might: state.stats.might + 0.15 } 
     }),
   },
-  'boots': {
-    id: 'boots',
-    name: 'Empty Tome',
-    description: 'Reduces cooldowns by 5%.',
+  'tome': {
+    id: 'tome',
+    name: 'Spell Tome',
+    description: 'Reduces skill cooldowns by -8%.',
     type: 'passive',
     element: 'arcane',
     maxLevel: 5,
     apply: (state) => ({ 
-      stats: { ...state.stats, cooldown: Math.min(state.stats.cooldown + 0.05, 0.5) } 
+      stats: { ...state.stats, cooldown: Math.min(state.stats.cooldown + 0.08, 0.45) } 
     }),
   },
-  'heart': {
-    id: 'heart',
-    name: 'Pummarola',
-    description: 'Increases max health by 20.',
+  'boots': {
+    id: 'boots',
+    name: 'Swift Boots',
+    description: 'Increases movement speed by +12%.',
     type: 'passive',
     element: 'physical',
     maxLevel: 5,
     apply: (state) => ({ 
-      stats: { ...state.stats, maxHealth: state.stats.maxHealth + 20 },
-      health: state.health + 20
+      stats: { ...state.stats, moveSpeed: state.stats.moveSpeed + 0.02 } 
+    }),
+  },
+  'heart': {
+    id: 'heart',
+    name: 'Vitality Heart',
+    description: 'Max HP +25 and +0.6 HP/sec regeneration.',
+    type: 'passive',
+    element: 'physical',
+    maxLevel: 5,
+    apply: (state) => ({ 
+      stats: { 
+        ...state.stats, 
+        maxHealth: state.stats.maxHealth + 25,
+        healthRegen: state.stats.healthRegen + 0.6
+      },
+      health: state.health + 25
     }),
   },
   'attractorb': {
     id: 'attractorb',
     name: 'Attractorb',
-    description: 'Increases pickup range.',
+    description: 'Increases pickup radius by +2.0.',
     type: 'passive',
-    element: 'physical',
+    element: 'arcane',
     maxLevel: 5,
     apply: (state) => ({ 
-      stats: { ...state.stats, pickupRange: state.stats.pickupRange + 1.5 } 
+      stats: { ...state.stats, pickupRange: state.stats.pickupRange + 2.0 } 
+    }),
+  },
+  'duplicator': {
+    id: 'duplicator',
+    name: 'Echo Catalyst',
+    description: 'Fires +1 extra projectile with weapons.',
+    type: 'passive',
+    element: 'lightning',
+    maxLevel: 3,
+    apply: (state) => ({ 
+      stats: { ...state.stats, projectileCount: state.stats.projectileCount + 1 } 
     }),
   },
 };
 
 export const COMBOS: Record<string, Combo> = {
-  'overload': {
-    id: 'overload',
-    name: 'Overload',
-    description: 'Lightning strikes trigger Fire explosions.',
+  'plasma_cataclysm': {
+    id: 'plasma_cataclysm',
+    name: 'Plasma Cataclysm',
+    description: 'Lightning triggers fire explosions; Fireballs chain electric discharges.',
     requiredElements: ['lightning', 'fire'],
     active: false,
   },
   'burning_blade': {
     id: 'burning_blade',
-    name: 'Burning Blade',
-    description: 'Swords deal double damage and burn enemies.',
+    name: 'Infernal Blades',
+    description: 'Orbiting swords ignite with hellfire, deal 2x damage and ignite targets.',
     requiredElements: ['physical', 'fire'],
     active: false,
   },
-  'holy_missile': {
-    id: 'holy_missile',
-    name: 'Holy Barrage',
-    description: 'Magic Missiles fire 2x faster.',
-    requiredElements: ['arcane', 'nature'],
+  'arcane_conduit': {
+    id: 'arcane_conduit',
+    name: 'Arcane Conduit',
+    description: 'Arcane Missiles fire 50% faster, track at lightning speed and chain shock.',
+    requiredElements: ['arcane', 'lightning'],
+    active: false,
+  },
+  'sanctuary': {
+    id: 'sanctuary',
+    name: 'Sanctuary of Life',
+    description: 'Nature Aura grows +40%, slows enemies by 30%, and heals you +2.5 HP/sec.',
+    requiredElements: ['nature', 'arcane'],
+    active: false,
+  },
+  'thorn_guard': {
+    id: 'thorn_guard',
+    name: 'Thorn Barrier',
+    description: 'Swords sprout razor thorns, deal bonus damage and destroy enemy projectiles.',
+    requiredElements: ['physical', 'nature'],
+    active: false,
+  },
+  'molten_spores': {
+    id: 'molten_spores',
+    name: 'Molten Spores',
+    description: 'Nature Aura emits fiery embers that inflict rapid burning damage over time.',
+    requiredElements: ['fire', 'nature'],
     active: false,
   },
 };
@@ -226,9 +276,10 @@ export const useGameStore = create<GameState>()(
       level: 1,
       score: 0,
       highScore: 0,
-      health: 100,
+      health: 120,
       xp: 0,
-      maxXp: 100,
+      maxXp: 35,
+      invulnerableUntil: 0,
       stats: INITIAL_STATS,
       inventory: [],
       activeCombos: [],
@@ -238,15 +289,16 @@ export const useGameStore = create<GameState>()(
 
       startGame: () => set({ 
         status: 'playing', 
-        health: 100, 
+        health: 120, 
         score: 0, 
         level: 1, 
         xp: 0, 
-        maxXp: 100,
+        maxXp: 35,
         time: 0,
         stats: INITIAL_STATS,
         inventory: [{ id: 'sword', level: 1 }],
         activeCombos: [],
+        invulnerableUntil: 0,
         // Obstacles are set by LevelManager on mount
       }),
       
@@ -265,13 +317,16 @@ export const useGameStore = create<GameState>()(
       addScore: (amount) => set((state) => ({ score: state.score + amount })),
       
       takeDamage: (amount) => {
-        const { health, endGame } = get();
+        const now = Date.now();
+        const { health, invulnerableUntil, endGame } = get();
+        if (now < invulnerableUntil) return;
+
         const newHealth = health - amount;
         if (newHealth <= 0) {
           set({ health: 0 });
           endGame();
         } else {
-          set({ health: newHealth });
+          set({ health: newHealth, invulnerableUntil: now + 500 });
         }
       },
       
@@ -285,7 +340,7 @@ export const useGameStore = create<GameState>()(
         if (newXp >= maxXp) {
           set({ 
             xp: newXp - maxXp, 
-            maxXp: Math.floor(maxXp * 1.2),
+            maxXp: Math.floor(maxXp * 1.22),
             status: 'levelup' 
           });
         } else {
@@ -315,7 +370,7 @@ export const useGameStore = create<GameState>()(
         const statUpdates = upgradeDef.apply(state);
 
         // Check Combos
-        const currentElements = new Set(newInventory.map(i => UPGRADES[i.id].element));
+        const currentElements = new Set(newInventory.map(i => UPGRADES[i.id]?.element).filter(Boolean));
         const newCombos = Object.values(COMBOS).filter(combo => 
           combo.requiredElements.every(el => currentElements.has(el))
         ).map(c => c.id);
@@ -331,7 +386,21 @@ export const useGameStore = create<GameState>()(
       
       resetGame: () => set({ status: 'menu' }),
       
-      tickTimer: (delta) => set((state) => ({ time: state.time + delta })),
+      tickTimer: (delta) => set((state) => {
+        let currentHealth = state.health;
+        // Passive regen
+        if (state.stats.healthRegen > 0 && currentHealth < state.stats.maxHealth) {
+          currentHealth = Math.min(state.stats.maxHealth, currentHealth + state.stats.healthRegen * delta);
+        }
+        // Sanctuary combo bonus healing
+        if (state.activeCombos.includes('sanctuary') && currentHealth < state.stats.maxHealth) {
+          currentHealth = Math.min(state.stats.maxHealth, currentHealth + 2.5 * delta);
+        }
+        return { 
+          time: state.time + delta,
+          health: currentHealth
+        };
+      }),
 
       unlockSkill: (skillId) => set((state) => {
         if (state.skillPoints >= 1 && !state.unlockedSkills.includes(skillId)) {

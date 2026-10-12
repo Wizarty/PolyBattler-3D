@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore, COMBOS } from '../store';
-import { Heart, Trophy, Zap, Skull, Clock, Pause, Play, LogOut, Flame, Sparkles } from 'lucide-react';
+import { Heart, Trophy, Zap, Skull, Clock, Pause, Play, LogOut, Flame, Sparkles, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UpgradeMenu } from './UpgradeMenu';
 import { TestMenu } from './TestMenu';
@@ -69,45 +69,66 @@ export function HUD() {
       <div className="absolute top-0 left-0 right-0 p-8 flex justify-between items-start pointer-events-auto">
         
         {/* Left: Stats */}
-        <div className="flex flex-col gap-4 w-64">
+        <div className="flex flex-col gap-3 w-80">
           {/* Health Bar */}
           <div className="flex items-center gap-3">
-            <Heart size={20} className="text-red-500 fill-red-500" />
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+            <Heart size={20} className="text-red-500 fill-red-500 flex-shrink-0" />
+            <div className="flex-1 h-2.5 bg-white/10 rounded-full overflow-hidden">
               <motion.div 
-                className="h-full bg-red-500"
+                className="h-full bg-gradient-to-r from-red-600 to-red-400 rounded-full"
                 initial={{ width: '100%' }}
-                animate={{ width: `${(health / stats.maxHealth) * 100}%` }}
+                animate={{ width: `${Math.min(100, Math.max(0, (health / stats.maxHealth) * 100))}%` }}
                 transition={{ type: 'spring', stiffness: 100 }}
               />
             </div>
-            <span className="font-mono text-sm font-bold">{Math.ceil(health)}</span>
+            <div className="font-mono text-sm font-bold flex items-center gap-1.5 flex-shrink-0">
+              <span>{Math.ceil(health)} / {stats.maxHealth}</span>
+              {stats.healthRegen > 0 && (
+                <span className="text-[11px] text-emerald-400 font-semibold">+{stats.healthRegen.toFixed(1)}/s</span>
+              )}
+            </div>
           </div>
           
           {/* XP Bar */}
           <div className="flex items-center gap-3">
-            <Zap size={20} className="text-yellow-400 fill-yellow-400" />
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+            <Zap size={20} className="text-yellow-400 fill-yellow-400 flex-shrink-0" />
+            <div className="flex-1 h-2.5 bg-white/10 rounded-full overflow-hidden">
               <motion.div 
-                className="h-full bg-yellow-400"
+                className="h-full bg-gradient-to-r from-yellow-500 to-amber-300 rounded-full"
                 initial={{ width: '0%' }}
-                animate={{ width: `${(xp / maxXp) * 100}%` }}
+                animate={{ width: `${Math.min(100, Math.max(0, (xp / maxXp) * 100))}%` }}
                 transition={{ type: 'spring', stiffness: 50 }}
               />
             </div>
-            <span className="font-mono text-sm font-bold text-yellow-400">LVL {level}</span>
+            <span className="font-mono text-sm font-bold text-yellow-400 flex-shrink-0">УР. {level}</span>
           </div>
 
-          {/* Active Combos */}
-          <div className="flex gap-2 mt-2">
-            {activeCombos.map(comboId => (
-              <div key={comboId} className="bg-white/10 p-1.5 rounded-lg border border-white/20" title={COMBOS[comboId].name}>
-                 {comboId === 'overload' && <Zap size={16} className="text-purple-400" />}
-                 {comboId === 'burning_blade' && <Flame size={16} className="text-orange-500" />}
-                 {comboId === 'holy_missile' && <Sparkles size={16} className="text-yellow-200" />}
-              </div>
-            ))}
-          </div>
+          {/* Active Combos Badges */}
+          {activeCombos.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {activeCombos.map(comboId => {
+                const combo = COMBOS[comboId];
+                if (!combo) return null;
+                return (
+                  <div 
+                    key={comboId} 
+                    className="bg-yellow-500/20 px-2.5 py-1 rounded-lg border border-yellow-400/40 flex items-center gap-1.5 shadow-[0_0_12px_rgba(250,204,21,0.25)] backdrop-blur-sm"
+                    title={`${combo.name}: ${combo.description}`}
+                  >
+                    {comboId === 'plasma_cataclysm' && <Zap size={13} className="text-yellow-400" />}
+                    {comboId === 'burning_blade' && <Flame size={13} className="text-orange-500" />}
+                    {comboId === 'arcane_conduit' && <Sparkles size={13} className="text-cyan-400" />}
+                    {comboId === 'sanctuary' && <Heart size={13} className="text-emerald-400" />}
+                    {comboId === 'thorn_guard' && <Shield size={13} className="text-green-400" />}
+                    {comboId === 'molten_spores' && <Flame size={13} className="text-red-400" />}
+                    <span className="text-[11px] font-bold text-yellow-300 font-sans tracking-wide">
+                      {combo.name}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Center: Timer */}

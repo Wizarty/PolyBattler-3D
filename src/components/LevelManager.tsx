@@ -14,28 +14,36 @@ function EnemyProjectile({ startPos, direction }: { startPos: Vector3, direction
     const [active, setActive] = useState(true);
     const distanceTraveled = useRef(0);
 
+    useEffect(() => {
+        if (mesh.current) {
+            mesh.current.userData = {
+                type: 'enemy_projectile',
+                destroy: () => setActive(false),
+            };
+        }
+    }, []);
+
     useFrame((state) => {
         if (status !== 'playing' || !active || !mesh.current) return;
 
-        const speed = 0.3; // Faster
+        const speed = 0.20; // Readable speed allowing dodging
         mesh.current.position.add(direction.clone().multiplyScalar(speed));
         distanceTraveled.current += speed;
 
-        if (distanceTraveled.current > 30) setActive(false); // Longer range
+        if (distanceTraveled.current > 26) setActive(false);
 
         // Check collision with player
         const playerPos = state.scene.userData.playerPosition as Vector3;
-        // Increased hitbox size from 1 to 2 to ensure hits
-        if (playerPos && mesh.current.position.distanceTo(playerPos) < 2.0) {
-            takeDamage(20); // More damage
+        if (playerPos && mesh.current.position.distanceTo(playerPos) < 1.3) {
+            takeDamage(12); // Balanced damage
             setActive(false);
         }
 
         // Check collision with obstacles
         for (const obs of obstacles) {
             const dist = new Vector3(obs.position.x, 0, obs.position.z).distanceTo(new Vector3(mesh.current.position.x, 0, mesh.current.position.z));
-            if (dist < obs.radius + 0.2) {
-                damageObstacle(obs.id, 20 / 5); // Damage obstacle
+            if (dist < obs.radius + 0.3) {
+                damageObstacle(obs.id, 12 / 4);
                 setActive(false);
                 return;
             }
@@ -46,8 +54,8 @@ function EnemyProjectile({ startPos, direction }: { startPos: Vector3, direction
 
     return (
         <mesh ref={mesh} position={startPos}>
-            <sphereGeometry args={[0.2]} />
-            <meshStandardMaterial color="#10b981" emissive="#059669" emissiveIntensity={2} />
+            <sphereGeometry args={[0.22]} />
+            <meshStandardMaterial color="#10b981" emissive="#059669" emissiveIntensity={2.5} />
         </mesh>
     );
 }
@@ -64,12 +72,14 @@ function GlobalProjectiles() {
     
     const { scene } = useThree();
 
-    // Helper to check obstacle collision for projectiles
+    const isPlasma = activeCombos.includes('plasma_cataclysm');
+    const isConduit = activeCombos.includes('arcane_conduit');
+
     const checkObstacleHit = (pos: Vector3, damage: number) => {
         for (const obs of obstacles) {
             const dist = new Vector3(obs.position.x, 0, obs.position.z).distanceTo(new Vector3(pos.x, 0, pos.z));
             if (dist < obs.radius + 0.5) {
-                damageObstacle(obs.id, damage / 5);
+                damageObstacle(obs.id, damage / 4);
                 return true;
             }
         }
@@ -83,63 +93,59 @@ function GlobalProjectiles() {
         const playerPos = state.scene.userData.playerPosition as Vector3;
         if (!playerPos) return;
 
-        // Magic Missile Logic (Now: Random direction, explode on timeout)
+        // Magic Missile Logic (True Homing Arcane Missiles)
         const missileUpgrade = inventory.find(i => i.id === 'magic_missile');
         if (missileUpgrade) {
-            let cooldown = 1.0 * (1 - stats.cooldown); // Faster fire rate
-            if (activeCombos.includes('holy_missile')) cooldown *= 0.5;
+            let cooldown = 1.1 * (1 - stats.cooldown);
+            if (isConduit) cooldown *= 0.6; // Arcane Conduit fires 40% faster
 
             if (now - lastMissileTime.current > cooldown) {
                 lastMissileTime.current = now;
-                const count = 3 + (missileUpgrade.level) + stats.projectileCount; // More projectiles
-                const damage = 10 * stats.might;
+                const count = 2 + missileUpgrade.level + stats.projectileCount;
+                const damage = 16 * stats.might * (1 + missileUpgrade.level * 0.15);
                 
                 const newMissiles = [];
                 for(let i=0; i<count; i++) {
-                    const angle = Math.random() * Math.PI * 2;
+                    const angle = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.5;
                     const direction = new Vector3(Math.cos(angle), 0, Math.sin(angle));
                     
                     newMissiles.push({
                         id: Date.now() + Math.random(),
                         startPos: playerPos.clone().add(new Vector3(0, 1, 0)),
-                        direction: direction,
+                        direction,
                         damage
                     });
                 }
                 setMissiles(prev => [...prev, ...newMissiles]);
-                // Lifetime handled in component
             }
         }
 
-        // Fireball Logic (Now: Nearest Enemy)
+        // Fireball Logic (Pyroblast AOE)
         const fireballUpgrade = inventory.find(i => i.id === 'fireball');
         if (fireballUpgrade) {
-            const cooldown = 1.5 * (1 - stats.cooldown);
+            const cooldown = 1.4 * (1 - stats.cooldown);
             if (now - lastFireballTime.current > cooldown) {
                 lastFireballTime.current = now;
-                const count = 1 + Math.floor(fireballUpgrade.level / 2) + stats.projectileCount;
-                const damage = 40 * stats.might;
+                const count = 1 + Math.floor(fireballUpgrade.level / 3) + stats.projectileCount;
+                let damage = 45 * stats.might * (1 + fireballUpgrade.level * 0.2);
+                if (isPlasma) damage *= 1.35;
 
                 // Find nearest enemies
                 const targets: { pos: Vector3, dist: number }[] = [];
                 scene.traverse((obj) => {
                     if (obj.userData.type === 'enemy') {
                         const dist = obj.position.distanceTo(playerPos);
-                        if (dist < 20) {
+                        if (dist < 22) {
                             targets.push({ pos: obj.position.clone(), dist });
                         }
                     }
                 });
-                
-                // Sort by distance
                 targets.sort((a, b) => a.dist - b.dist);
 
                 const newFireballs = [];
                 for(let i=0; i<count; i++) {
                     let direction = new Vector3(1, 0, 0);
-                    
                     if (targets.length > 0) {
-                        // Pick nearest (cycle through if multiple projectiles)
                         const targetIndex = i % targets.length;
                         const targetPos = targets[targetIndex].pos;
                         direction = new Vector3().subVectors(targetPos, playerPos).normalize();
@@ -160,23 +166,20 @@ function GlobalProjectiles() {
             }
         }
 
-        // Lightning Logic
+        // Lightning Logic (Thunderstrike)
         const lightningUpgrade = inventory.find(i => i.id === 'lightning');
         if (lightningUpgrade) {
-            const cooldown = 3.0 * (1 - stats.cooldown);
+            const cooldown = 2.4 * (1 - stats.cooldown);
             if (now - lastLightningTime.current > cooldown) {
                 lastLightningTime.current = now;
-                const count = 1 + (lightningUpgrade.level - 1) + stats.projectileCount;
-                let damage = 50 * stats.might;
-                
-                // Combo: Overload
-                if (activeCombos.includes('overload')) damage *= 1.5;
+                const count = 1 + Math.floor((lightningUpgrade.level - 1) / 2) + stats.projectileCount;
+                let damage = 55 * stats.might * (1 + lightningUpgrade.level * 0.2);
+                if (isPlasma) damage *= 1.4;
 
-                // Find random enemies
                 const targets: Object3D[] = [];
                 scene.traverse((obj) => {
                     if (obj.userData.type === 'enemy') {
-                        if (obj.position.distanceTo(playerPos) < 15) {
+                        if (obj.position.distanceTo(playerPos) < 18) {
                             targets.push(obj);
                         }
                     }
@@ -197,6 +200,18 @@ function GlobalProjectiles() {
                         });
                         
                         if (target.userData.hit) target.userData.hit(damage);
+
+                        // Plasma Cataclysm: Lightning impact causes secondary fire explosion
+                        if (isPlasma) {
+                            const shockwavePos = target.position.clone();
+                            scene.traverse((nearby) => {
+                                if (nearby.userData.type === 'enemy' && nearby !== target) {
+                                    if (nearby.position.distanceTo(shockwavePos) < 4.0) {
+                                        if (nearby.userData.hit) nearby.userData.hit(damage * 0.6);
+                                    }
+                                }
+                            });
+                        }
                     }
                     setLightnings(prev => [...prev, ...newLightnings]);
                     setTimeout(() => setLightnings(prev => prev.slice(newLightnings.length)), 500);
@@ -208,62 +223,124 @@ function GlobalProjectiles() {
     return (
         <>
             {missiles.map(m => (
-                <MagicMissile key={m.id} startPos={m.startPos} direction={m.direction} damage={m.damage} onHitObstacle={(pos) => checkObstacleHit(pos, m.damage)} />
+                <MagicMissile 
+                    key={m.id} 
+                    startPos={m.startPos} 
+                    direction={m.direction} 
+                    damage={m.damage} 
+                    isConduit={isConduit}
+                    onHitObstacle={(pos) => checkObstacleHit(pos, m.damage)} 
+                />
             ))}
             {fireballs.map(f => (
-                <Fireball key={f.id} startPos={f.startPos} direction={f.direction} damage={f.damage} onHitObstacle={(pos) => checkObstacleHit(pos, f.damage)} />
+                <Fireball 
+                    key={f.id} 
+                    startPos={f.startPos} 
+                    direction={f.direction} 
+                    damage={f.damage} 
+                    isPlasma={isPlasma}
+                    onHitObstacle={(pos) => checkObstacleHit(pos, f.damage)} 
+                />
             ))}
             {lightnings.map(l => (
-                <LightningStrike key={l.id} position={l.position} />
+                <LightningStrike key={l.id} position={l.position} isPlasma={isPlasma} />
             ))}
         </>
     );
 }
 
-// ... Fireball, LightningStrike, MagicMissile components remain same ...
-function Fireball({ startPos, direction, damage, onHitObstacle }: { startPos: Vector3, direction: Vector3, damage: number, onHitObstacle: (pos: Vector3) => boolean }) {
+function Fireball({ 
+  startPos, 
+  direction, 
+  damage, 
+  isPlasma, 
+  onHitObstacle 
+}: { 
+  startPos: Vector3, 
+  direction: Vector3, 
+  damage: number, 
+  isPlasma?: boolean, 
+  onHitObstacle: (pos: Vector3) => boolean 
+}) {
   const mesh = useRef<Mesh>(null);
   const { scene } = useThree();
   const [active, setActive] = useState(true);
+  const [exploding, setExploding] = useState(false);
+  const distanceTraveled = useRef(0);
+  const hasExploded = useRef(false);
+
+  const explode = () => {
+    if (hasExploded.current) return;
+    hasExploded.current = true;
+    setExploding(true);
+
+    const radius = isPlasma ? 4.5 : 3.0;
+    scene.traverse((obj) => {
+      if (obj.userData.type === 'enemy' && mesh.current) {
+        if (obj.position.distanceTo(mesh.current.position) < radius) {
+          if (obj.userData.hit) obj.userData.hit(damage);
+        }
+      }
+    });
+  };
 
   useFrame(() => {
     if (!active || !mesh.current) return;
     
-    mesh.current.position.add(direction.clone().multiplyScalar(0.3));
-    mesh.current.rotation.z += 0.2;
-    mesh.current.rotation.x += 0.1;
-
-    // Obstacle Check
-    if (onHitObstacle(mesh.current.position)) {
-        setActive(false);
-        return;
+    if (exploding) {
+      mesh.current.scale.multiplyScalar(1.15);
+      const mat = mesh.current.material as any;
+      if (mat) mat.opacity -= 0.07;
+      if (mesh.current.scale.x > 3.6) setActive(false);
+      return;
     }
 
+    const speed = 0.35;
+    mesh.current.position.add(direction.clone().multiplyScalar(speed));
+    mesh.current.rotation.z += 0.2;
+    mesh.current.rotation.x += 0.1;
+    distanceTraveled.current += speed;
+
+    if (onHitObstacle(mesh.current.position)) {
+      explode();
+      return;
+    }
+
+    let hit = false;
     scene.traverse((obj) => {
+      if (hit) return;
       if (obj.userData.type === 'enemy' && mesh.current) {
-        if (obj.position.distanceTo(mesh.current.position) < 1.5) { 
-          if (obj.userData.hit) obj.userData.hit(damage);
-          setActive(false);
+        if (obj.position.distanceTo(mesh.current.position) < 1.4) {
+          hit = true;
         }
       }
     });
+
+    if (hit || distanceTraveled.current > 24) {
+      explode();
+    }
   });
 
   if (!active) return null;
 
   return (
     <mesh ref={mesh} position={startPos} castShadow>
-      <sphereGeometry args={[0.5]} />
-      <meshStandardMaterial color="#ef4444" emissive="#f87171" emissiveIntensity={2} />
+      <sphereGeometry args={[exploding ? 0.9 : 0.45]} />
+      <meshStandardMaterial 
+        color={isPlasma ? "#f59e0b" : "#ef4444"} 
+        emissive={isPlasma ? "#fef08a" : "#f87171"} 
+        emissiveIntensity={exploding ? 4 : 2} 
+        transparent={exploding}
+        opacity={1}
+      />
     </mesh>
   );
 }
 
-function LightningStrike({ position }: { position: Vector3 }) {
+function LightningStrike({ position, isPlasma }: { position: Vector3, isPlasma?: boolean }) {
     const group = useRef<Group>(null);
     const progress = useRef(0);
     
-    // Create a simple jagged path
     const points = useRef(() => {
         const pts = [];
         const segments = 8;
@@ -285,24 +362,18 @@ function LightningStrike({ position }: { position: Vector3 }) {
     useFrame((state, delta) => {
         if (!group.current) return;
         
-        // Animation: Strike down quickly, then fade
-        progress.current += delta * 3.0; // Speed of animation
-        
-        const strikePhase = Math.min(progress.current * 2, 1); // 0 to 1 quickly
-        const fadePhase = Math.max(0, 1 - (progress.current - 0.5) * 2); // Fade after 0.5s
-        
+        progress.current += delta * 3.2;
+        const strikePhase = Math.min(progress.current * 2, 1);
+        const fadePhase = Math.max(0, 1 - (progress.current - 0.5) * 2);
         const opacity = strikePhase * fadePhase;
 
-        // Update visibility of segments based on strike progress
         group.current.children.forEach((child: any, index) => {
             if (child.material) {
-                // Show segments sequentially
                 const segmentThreshold = index / group.current!.children.length;
                 const isVisible = strikePhase > segmentThreshold;
-                
                 child.visible = isVisible;
                 child.material.opacity = isVisible ? opacity : 0;
-                child.material.emissiveIntensity = isVisible ? opacity * 3 : 0;
+                child.material.emissiveIntensity = isVisible ? opacity * 3.5 : 0;
             }
         });
     });
@@ -322,8 +393,8 @@ function LightningStrike({ position }: { position: Vector3 }) {
                     <mesh key={i} position={mid} quaternion={quaternion}>
                         <cylinderGeometry args={[0.15, 0.05, len, 6]} />
                         <meshStandardMaterial 
-                            color="#fef08a" 
-                            emissive="#fef08a" 
+                            color={isPlasma ? "#fde047" : "#fef08a"} 
+                            emissive={isPlasma ? "#f97316" : "#fef08a"} 
                             emissiveIntensity={3} 
                             transparent
                             opacity={0}
@@ -335,76 +406,116 @@ function LightningStrike({ position }: { position: Vector3 }) {
     );
 }
 
-function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos: Vector3, direction: Vector3, damage: number, onHitObstacle: (pos: Vector3) => boolean }) {
+function MagicMissile({ 
+  startPos, 
+  direction, 
+  damage, 
+  isConduit, 
+  onHitObstacle 
+}: { 
+  startPos: Vector3, 
+  direction: Vector3, 
+  damage: number, 
+  isConduit?: boolean, 
+  onHitObstacle: (pos: Vector3) => boolean 
+}) {
   const mesh = useRef<Mesh>(null);
   const [active, setActive] = useState(true);
   const [exploding, setExploding] = useState(false);
   const { scene } = useThree();
   const distanceTraveled = useRef(0);
   const hasExploded = useRef(false);
+  const currentDir = useRef(direction.clone());
+  const targetEnemy = useRef<Object3D | null>(null);
 
   const explode = () => {
-      if (hasExploded.current) return;
-      hasExploded.current = true;
-      setExploding(true);
-      
-      // AOE Damage
-      // We use a larger radius for the explosion effect
-      const explosionRadius = 3.5;
-      
+    if (hasExploded.current) return;
+    hasExploded.current = true;
+    setExploding(true);
+    
+    const explosionRadius = isConduit ? 4.2 : 3.0;
+    const hitEnemies: Object3D[] = [];
+
+    scene.traverse((obj) => {
+      if (obj.userData.type === 'enemy' && mesh.current) {
+        if (obj.position.distanceTo(mesh.current.position) < explosionRadius) {
+          if (obj.userData.hit) obj.userData.hit(damage);
+          hitEnemies.push(obj);
+        }
+      }
+    });
+
+    // Arcane Conduit: Chain shock additional foes
+    if (isConduit && mesh.current) {
+      let chained = 0;
       scene.traverse((obj) => {
-          if (obj.userData.type === 'enemy') {
-              if (obj.position.distanceTo(mesh.current!.position) < explosionRadius) {
-                  if (obj.userData.hit) obj.userData.hit(damage);
-              }
+        if (chained >= 2) return;
+        if (obj.userData.type === 'enemy' && !hitEnemies.includes(obj) && mesh.current) {
+          if (obj.position.distanceTo(mesh.current.position) < 8.0) {
+            if (obj.userData.hit) obj.userData.hit(damage * 0.7);
+            chained++;
           }
+        }
       });
+    }
   };
 
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (!active || !mesh.current) return;
     
     if (exploding) {
-        // Explosion animation
-        mesh.current.scale.multiplyScalar(1.1);
-        const mat = mesh.current.material as any;
-        if (mat) mat.opacity -= 0.05;
-        if (mesh.current.scale.x > 4) setActive(false);
-        return;
+      mesh.current.scale.multiplyScalar(1.12);
+      const mat = mesh.current.material as any;
+      if (mat) mat.opacity -= 0.06;
+      if (mesh.current.scale.x > 3.8) setActive(false);
+      return;
     }
 
-    // Move
-    const speed = 0.3; 
-    mesh.current.position.add(direction.clone().multiplyScalar(speed));
+    // Homing search for target
+    if (!targetEnemy.current && scene) {
+      let nearestDist = 24;
+      let closest: Object3D | null = null;
+      scene.traverse((obj) => {
+        if (obj.userData.type === 'enemy' && mesh.current) {
+          const d = obj.position.distanceTo(mesh.current.position);
+          if (d < nearestDist) {
+            nearestDist = d;
+            closest = obj;
+          }
+        }
+      });
+      targetEnemy.current = closest;
+    }
+
+    // Steer smoothly towards target
+    if (targetEnemy.current && targetEnemy.current.parent && mesh.current) {
+      const desiredDir = new Vector3().subVectors(targetEnemy.current.position, mesh.current.position).normalize();
+      desiredDir.y = 0;
+      currentDir.current.lerp(desiredDir, isConduit ? 0.16 : 0.08).normalize();
+    }
+
+    // Movement
+    const speed = isConduit ? 0.40 : 0.32; 
+    mesh.current.position.add(currentDir.current.clone().multiplyScalar(speed));
     distanceTraveled.current += speed;
 
-    // Obstacle Check
     if (onHitObstacle(mesh.current.position)) {
-        explode();
-        return;
+      explode();
+      return;
     }
 
-    // Enemy Direct Hit Check
-    // We check for ANY enemy in close range to trigger explosion
     let hitEnemy = false;
     scene.traverse((obj) => {
-        if (hitEnemy) return;
-        if (obj.userData.type === 'enemy') {
-            // Check distance (considering enemy radius approx 0.5 + missile radius 0.3)
-            if (obj.position.distanceTo(mesh.current!.position) < 1.5) {
-                hitEnemy = true;
-            }
+      if (hitEnemy) return;
+      if (obj.userData.type === 'enemy' && mesh.current) {
+        if (obj.position.distanceTo(mesh.current.position) < 1.4) {
+          hitEnemy = true;
         }
+      }
     });
 
-    if (hitEnemy) {
-        explode();
-        return;
-    }
-
-    // Explode after max distance
-    if (distanceTraveled.current > 15) {
-        explode();
+    if (hitEnemy || distanceTraveled.current > 22) {
+      explode();
     }
   });
 
@@ -412,11 +523,11 @@ function MagicMissile({ startPos, direction, damage, onHitObstacle }: { startPos
 
   return (
     <mesh ref={mesh} position={startPos} castShadow>
-      <sphereGeometry args={[exploding ? 0.8 : 0.3]} />
+      <sphereGeometry args={[exploding ? 0.7 : 0.25]} />
       <meshStandardMaterial 
-        color={exploding ? "#a855f7" : "#60a5fa"} 
-        emissive={exploding ? "#d8b4fe" : "#3b82f6"} 
-        emissiveIntensity={exploding ? 4 : 2} 
+        color={exploding ? (isConduit ? "#38bdf8" : "#a855f7") : (isConduit ? "#00f0ff" : "#60a5fa")} 
+        emissive={isConduit ? "#38bdf8" : "#3b82f6"} 
+        emissiveIntensity={exploding ? 4 : 2.5} 
         transparent={true}
         opacity={1}
       />
@@ -565,7 +676,7 @@ export function LevelManager() {
     }
 
     // Difficulty scaling
-    const spawnRate = Math.max(0.2, 2 - (time / 60)); 
+    const spawnRate = Math.max(0.35, 2.4 - (time / 65)); 
     
     if (Math.random() < delta / spawnRate) {
       const playerPos = state.scene.userData.playerPosition as Vector3;
@@ -580,34 +691,23 @@ export function LevelManager() {
       const rand = Math.random();
       
       // Progression & Diversity
-      if (time > 10) {
-          // Mix it up early
-          const r = Math.random();
-          if (r > 0.7) type = 'wanderer';
-          else if (r > 0.9) type = 'fast';
-      }
-      
-      if (time > 30) {
-          const r = Math.random();
-          if (r > 0.6) type = 'ranged';
-          else if (r > 0.8) type = 'wanderer';
-      }
-
-      if (time > 60) {
-          const r = Math.random();
-          if (r > 0.5) type = 'fast';
-          else if (r > 0.7) type = 'ranged';
-          else if (r > 0.9) type = 'tank';
-      }
-
-      if (time > 120) {
-           // Chaos mode
-           const types: EnemyType[] = ['basic', 'fast', 'tank', 'ranged', 'wanderer'];
-           type = types[Math.floor(Math.random() * types.length)];
+      if (time > 20 && time <= 50) {
+          if (rand > 0.65) type = 'wanderer';
+      } else if (time > 50 && time <= 85) {
+          if (rand > 0.70) type = 'ranged';
+          else if (rand > 0.45) type = 'fast';
+          else if (rand > 0.30) type = 'wanderer';
+      } else if (time > 85 && time <= 120) {
+          if (rand > 0.75) type = 'tank';
+          else if (rand > 0.50) type = 'ranged';
+          else if (rand > 0.30) type = 'fast';
+      } else if (time > 120) {
+          const types: EnemyType[] = ['basic', 'fast', 'tank', 'ranged', 'wanderer'];
+          type = types[Math.floor(Math.random() * types.length)];
       }
 
       setEnemies(prev => {
-          if (prev.length > 100) return prev; 
+          if (prev.length > 75) return prev; 
           return [...prev, {
             id: `enemy-${Date.now()}-${Math.random()}`,
             position: [x, 1, z],
@@ -625,9 +725,9 @@ export function LevelManager() {
       let type: PickupType = 'xp';
       let dropValue = value;
 
-      if (r > 0.98) type = 'bomb';
-      else if (r > 0.96) type = 'magnet';
-      else if (r > 0.92) { type = 'health'; dropValue = 20; }
+      if (r > 0.985) type = 'bomb';
+      else if (r > 0.965) type = 'magnet';
+      else if (r > 0.885) { type = 'health'; dropValue = 35; }
       
       setPickups(prev => [...prev, {
           id: `pickup-${Date.now()}-${Math.random()}`,
